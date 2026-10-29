@@ -1,0 +1,49 @@
+/* Let the GNOME theme supply text and surfaces; use color for meter state. */
+.am-panel-tools { spacing: 4px; padding: 0; margin: 0; }
+.am-panel { spacing: 6px; padding: 0 9px; margin: 0; border-radius: 999px; }
+.am-panel-waiting { background-color: rgba(166, 104, 225, 0.32); }
+.am-panel-identity { spacing: 1px; padding: 0; margin: 0; }
+.am-panel-name { font-size: 12px; font-weight: 600; }
+.am-panel-meter { height: 3px; }
+.am-percent { font-size: 11px; font-feature-settings: "tnum"; }
+.am-dashboard { width: 560px; spacing: 14px; padding: 6px 4px; }
+.am-heading { font-size: 1.15em; font-weight: bold; }
+.am-section { spacing: 8px; }
+.am-section-heading { font-weight: bold; font-size: 1.05em; }
+.am-quota-cards { spacing: 12px; }
+.am-quota-card { background-color: rgba(128,128,128,0.1); padding: 12px 14px; border-radius: 12px; spacing: 6px; }
+.am-card-title { font-size: 1.1em; font-weight: bold; }
+.am-plan { font-size: 0.78em; }
+.am-window-name { padding-top: 4px; font-size: 0.9em; }
+.am-window-percent { font-weight: bold; font-feature-settings: "tnum"; }
+.am-meter { height: 9px; min-width: 6em; }
+.am-reset { font-size: 0.8em; }
+.am-rule { height: 1px; background-color: rgba(128,128,128,0.25); }
+.am-muted, .am-table-heading { font-size: 0.9em; }
+.am-table-label, .am-table-number { font-size: 0.95em; }
+.am-table-number { font-feature-settings: "tnum"; }
+.am-table-total { font-weight: bold; }
+.am-token-row { border-radius: 6px; }
+.am-token-row:hover { background-color: rgba(128,128,128,0.16); }
+.am-tool-heading { font-weight: bold; font-size: 0.9em; }
+.am-session-list { spacing: 4px; }
+.am-session-group { padding-top: 4px; }
+.am-session-group-spaced { padding-top: 18px; }
+.am-session-button { padding: 7px 9px; border-radius: 8px; text-align: left; }
+.am-session-button:hover, .am-session-button:focus { background-color: rgba(128,128,128,0.16); }
+.am-session-needs-input { background-color: rgba(160,110,220,0.08); }
+.am-session-content { spacing: 18px; }
+.am-session-title { max-width: 345px; font-weight: 500; }
+.am-session-project { max-width: 345px; font-size: 0.8em; }
+.am-session-state { font-size: 0.9em; }
+.am-session-status { max-width: 210px; }
+.am-dashboard-compact .am-session-content { spacing: 10px; }
+.am-dashboard-compact .am-session-title, .am-dashboard-compact .am-session-project { max-width: 160px; }
+.am-dashboard-compact .am-session-status { max-width: 130px; }
+.am-attention { color: #c5a0f5; font-size: 0.9em; }
+.am-provider-error { max-width: 240px; font-size: 0.8em; }
+.am-footer { padding: 2px 6px; spacing: 8px; }
+.am-footer-button { padding: 6px 8px; border-radius: 6px; }
+.am-footer-button:hover, .am-footer-button:checked { background-color: rgba(128,128,128,0.16); }
+.am-footer-button-content { spacing: 6px; }
+.am-settings-button { padding: 6px; }

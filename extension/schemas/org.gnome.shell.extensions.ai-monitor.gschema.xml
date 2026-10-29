@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.ai-monitor" path="/org/gnome/shell/extensions/ai-monitor/">
+    <key name="sound-enabled" type="b"><default>false</default><summary>Play attention sounds</summary></key>
+    <key name="sound-file" type="s"><default>''</default><summary>Custom local audio file (empty uses the selected effect)</summary></key>
+    <key name="sound-effect" type="u"><default>1</default><range min="1" max="3"/><summary>Bundled attention sound effect</summary></key>
+    <key name="sound-repeat" type="s"><default>'once'</default><choices><choice value="once"/><choice value="minute"/><choice value="five-minutes"/></choices><summary>How often to play sound while a terminal needs attention</summary></key>
+    <key name="sound-volume" type="u"><default>70</default><range min="0" max="100"/><summary>Audio volume</summary></key>
+    <key name="notify-ready" type="b"><default>true</default><summary>Alert when an agent finishes its turn</summary></key>
+    <key name="notifications-enabled" type="b"><default>true</default><summary>Desktop attention notifications</summary></key>
+    <key name="pulse-enabled" type="b"><default>true</default><summary>Blink the tool background when attention is needed</summary></key>
+    <key name="show-percent" type="b"><default>true</default><summary>Show consumed allowance percentage</summary></key>
+    <key name="show-cache-info" type="b"><default>false</default><summary>Show cached token counts and percentages in the token table</summary></key>
+  </schema>
+</schemalist>

@@ -1,0 +1,10 @@
+{
+  "uuid": "ai-monitor@local",
+  "name": "ai-monitor",
+  "description": "Claude and Codex usage, subscription windows and terminal agents needing attention. Independent local service, tmux navigation and optional audio.",
+  "shell-version": ["46", "47", "48", "49", "50"],
+  "settings-schema": "org.gnome.shell.extensions.ai-monitor",
+  "version": 10,
+  "version-name": "1.0.0",
+  "url": "https://github.com/remkobrenters/ai-monitor"
+}

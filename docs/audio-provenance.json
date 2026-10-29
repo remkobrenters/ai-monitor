@@ -1,0 +1,20 @@
+[
+  {
+    "file": "extension/sounds/sound_effect_1.mp3",
+    "source": "https://cdn.pixabay.com/download/audio/2022/01/07/audio_455a3917eb.mp3?filename=supremetylewiss-message-13716.mp3",
+    "license": "Pixabay Content License",
+    "sha256": "3534dd37fcb4ea22075a7e6057927120c936d7f0d6a176ecdf84e2a4479fe48d"
+  },
+  {
+    "file": "extension/sounds/sound_effect_2.mp3",
+    "source": "https://cdn.pixabay.com/download/audio/2025/08/02/audio_971c568ab3.mp3?filename=universfield-level-up-07-383747.mp3",
+    "license": "Pixabay Content License",
+    "sha256": "29a75cfbe7329b6298c96fbabc1e0a21d4696406b1a8859461c609b5d29b60c7"
+  },
+  {
+    "file": "extension/sounds/sound_effect_3.mp3",
+    "source": "https://cdn.pixabay.com/download/audio/2023/06/11/audio_a556a8525a.mp3?filename=universfield-notification-chime-153308.mp3",
+    "license": "Pixabay Content License",
+    "sha256": "db4e536b8d99686b46129adf76bdf2ab5a8ad44cb59087963bdf93f6cc3c1b68"
+  }
+]
