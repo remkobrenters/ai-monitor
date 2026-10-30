@@ -6,7 +6,7 @@
 .am-panel-name { font-size: 12px; font-weight: 600; }
 .am-panel-meter { height: 3px; }
 .am-percent { font-size: 11px; font-feature-settings: "tnum"; }
-.am-dashboard { width: 560px; spacing: 14px; padding: 6px 4px; }
+.am-dashboard { width: 38em; spacing: 14px; padding: 6px 10px; }
 .am-heading { font-size: 1.15em; font-weight: bold; }
 .am-section { spacing: 8px; }
 .am-section-heading { font-weight: bold; font-size: 1.05em; }

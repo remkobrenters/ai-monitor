@@ -197,7 +197,7 @@ export default class AiMonitor extends Extension {
         const relevant = this._snapshot?.sessions.some(row => attention(row, this._settings.get_boolean('notify-ready')) &&
             row.views?.some(view => view.gnomeTerminal &&
                 [bus, app].includes(view.gnomeTerminal.busName)));
-        if (!bus || !path || !relevant || !this._settings.get_boolean('sound-enabled')) {
+        if (!bus || !path || !relevant) {
             this._visibilityRequest = null;
             this._applySound();
             return;
@@ -210,6 +210,7 @@ export default class AiMonitor extends Extension {
         const finish = screen => {
             if (!current()) return;
             this._visibilityRequest = null;
+            if (screen) this._acknowledgeSeen(screen);
             this._applySound(screen);
         };
         const call = (objectPath, iface, method, params, callback) => {
@@ -241,6 +242,21 @@ export default class AiMonitor extends Extension {
                     finish({window, bus, app, id});
                 });
             }));
+    }
+
+    // A waiting session shown in the focused tab counts as seen, like choosing it in the menu.
+    // Only exact Ubuntu Terminal tabs qualify; a window ID can belong to another tab.
+    _acknowledgeSeen(screen) {
+        if (Main.sessionMode.isLocked) return;
+        const notifyReady = this._settings.get_boolean('notify-ready');
+        const seen = (this._snapshot?.sessions ?? []).filter(row => attention(row, notifyReady) &&
+            this._isVisible({views: (row.views ?? []).filter(view => view.gnomeTerminal)}, screen));
+        if (!seen.length) return;
+        for (const row of seen) this._send({op: 'ack', id: row.id});
+        // The bridge snapshots every two seconds; stop the highlight now.
+        this._snapshot = {...this._snapshot, sessions: this._snapshot.sessions.map(row =>
+            seen.includes(row) ? {...row, attention: false} : row)};
+        this._render();
     }
 
     _applySound(screen = null) {
@@ -339,12 +355,13 @@ export default class AiMonitor extends Extension {
         const monitor = Main.layoutManager.findMonitorForActor?.(this._button);
         const workArea = Main.layoutManager.getWorkAreaForMonitor(monitor?.index ?? Main.layoutManager.primaryIndex);
         const scale = St.ThemeContext.get_for_stage(global.stage).scale_factor;
-        const width = Math.max(280, Math.min(560, Math.floor((workArea.width ?? 1184) / scale) - 32));
+        // The stylesheet sets the normal width; cap it on narrow displays.
+        const maxWidth = Math.max(280, Math.floor((workArea.width ?? 1184) / scale) - 44);
         this._dashboard = new Dashboard(this._snapshot, visibleTools, this._settings, id => {
             menu.close();
             this._send({op: 'focus', id});
-        }, width < 480);
-        this._dashboard.actor.set_style(`width: ${width}px;`);
+        }, maxWidth < 480);
+        this._dashboard.actor.set_style(`max-width: ${maxWidth}px;`);
         const height = Math.max(120, Math.floor(workArea.height / scale) - 220);
         this._dashboardScroll = new St.ScrollView({style_class: 'am-dashboard-scroll',
             overlay_scrollbars: true, hscrollbar_policy: St.PolicyType.NEVER});
@@ -358,7 +375,7 @@ export default class AiMonitor extends Extension {
         const silentContent = new St.BoxLayout({style_class: 'am-footer-button-content'});
         silentContent.add_child(new St.Icon({icon_name: silent ? 'audio-volume-muted-symbolic' :
             'audio-volume-high-symbolic', icon_size: 16}));
-        silentContent.add_child(label(width < 480 ? 'Silent' : 'Silent mode'));
+        silentContent.add_child(label(maxWidth < 480 ? 'Silent' : 'Silent mode'));
         const silentButton = new St.Button({style_class: 'button flat am-footer-button',
             accessible_name: 'Silent mode', can_focus: true, toggle_mode: true, checked: silent,
             child: silentContent});
@@ -371,7 +388,7 @@ export default class AiMonitor extends Extension {
         const acknowledge = new St.Button({style_class: 'button flat am-footer-button',
             accessible_name: 'Acknowledge agents', can_focus: hasWaiting,
             reactive: hasWaiting, opacity: hasWaiting ? 255 : 128,
-            child: label(width < 480 ? 'Acknowledge' : 'Acknowledge agents')});
+            child: label(maxWidth < 480 ? 'Acknowledge' : 'Acknowledge agents')});
         acknowledge.connect('clicked', () => {
             menu.close();
             this._send({op: 'ack'});

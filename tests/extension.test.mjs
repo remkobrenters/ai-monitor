@@ -242,7 +242,7 @@ test('a narrow scaled monitor keeps usage, sessions and footer actions in a comp
     f.extension._update(data);
     f.extension._button.menu.open();
     const dashboard = f.extension._dashboard;
-    assert.equal(dashboard.actor.style, 'width: 288px;');
+    assert.equal(dashboard.actor.style, 'max-width: 280px;');
     assert.ok(dashboard.actor.style_class.includes('am-dashboard-compact'));
     assert.equal(dashboard.actor.children[1].vertical, true);
     assert.equal(dashboard.sessionButtons.size, 1);
@@ -411,6 +411,27 @@ test('focused Ubuntu tab suppresses initial and repeat sounds while another tab 
     assert.equal(f.processes.length, 2);
     assert.ok(f.dbusCalls.every(call => ['Describe', 'GetInitialResultSet'].includes(call.method)));
     assert.equal(f.activations.length, 0);
+    e.disable();
+});
+
+test('a waiting session seen in the focused Ubuntu tab is acknowledged, even in silent mode', async () => {
+    const f = await fixture();
+    const e = f.extension;
+    e._update(f.snapshot([]));
+    f.display.focus_window = {
+        get_gtk_unique_bus_name: () => ':1.77', get_gtk_application_id: () => 'org.gnome.Terminal',
+        get_gtk_window_object_path: () => '/org/gnome/Terminal/window/1', get_description: () => '0x123',
+    };
+    f.screens.push('second-tab', 'first-tab');
+    const row = {id: 'a', tool: 'claude', title: 'Worker', state: 'ready', attention: true,
+        revision: 1, views: [{windowId: '0x123', gnomeTerminal: {busName: ':1.77', screenId: 'first-tab'}}]};
+    const other = {...row, id: 'b', tool: 'codex', views: [{windowId: '0x123',
+        gnomeTerminal: {busName: ':1.77', screenId: 'second-tab'}}]};
+    e._update(f.snapshot([row, other]));
+    assert.deepEqual(f.sent.filter(message => message.op === 'ack'), [{op: 'ack', id: 'a'}],
+        'only the exact tab counts as seen; a shared window ID does not');
+    assert.equal(e._buttons.claude.needsAttention, false, 'stops blinking before the next service snapshot');
+    assert.equal(e._buttons.codex.needsAttention, true);
     e.disable();
 });
 

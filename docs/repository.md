@@ -12,10 +12,10 @@ Standalone GNOME monitor for Claude Code and Codex: subscription limits, token u
 
 ## Release
 
-- Git tag: `v1.0.0`
-- Title: **ai-monitor v1.0.0 — Know when your agents need you**
-- Body: [v1.0.0 release notes](releases/v1.0.0.md)
-- Asset: `ai-monitor-1.0.0-source.zip` and its `.sha256` checksum
+- Git tag: `v1.1.0`
+- Title: **ai-monitor v1.1.0 — Quiet for the tab you are in**
+- Body: [v1.1.0 release notes](releases/v1.1.0.md)
+- Asset: `ai-monitor-1.1.0-source.zip` and its `.sha256` checksum
 
 The text is ready to copy into GitHub. Preparing these files does not publish a
 release or change repository settings.
