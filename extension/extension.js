@@ -197,7 +197,7 @@ export default class AiMonitor extends Extension {
         const relevant = this._snapshot?.sessions.some(row => attention(row, this._settings.get_boolean('notify-ready')) &&
             row.views?.some(view => view.gnomeTerminal &&
                 [bus, app].includes(view.gnomeTerminal.busName)));
-        if (!bus || !path || !relevant || !this._settings.get_boolean('sound-enabled')) {
+        if (!bus || !path || !relevant) {
             this._visibilityRequest = null;
             this._applySound();
             return;
@@ -210,6 +210,7 @@ export default class AiMonitor extends Extension {
         const finish = screen => {
             if (!current()) return;
             this._visibilityRequest = null;
+            if (screen) this._acknowledgeSeen(screen);
             this._applySound(screen);
         };
         const call = (objectPath, iface, method, params, callback) => {
@@ -241,6 +242,21 @@ export default class AiMonitor extends Extension {
                     finish({window, bus, app, id});
                 });
             }));
+    }
+
+    // A waiting session shown in the focused tab counts as seen, like choosing it in the menu.
+    // Only exact Ubuntu Terminal tabs qualify; a window ID can belong to another tab.
+    _acknowledgeSeen(screen) {
+        if (Main.sessionMode.isLocked) return;
+        const notifyReady = this._settings.get_boolean('notify-ready');
+        const seen = (this._snapshot?.sessions ?? []).filter(row => attention(row, notifyReady) &&
+            this._isVisible({views: (row.views ?? []).filter(view => view.gnomeTerminal)}, screen));
+        if (!seen.length) return;
+        for (const row of seen) this._send({op: 'ack', id: row.id});
+        // The bridge snapshots every two seconds; stop the highlight now.
+        this._snapshot = {...this._snapshot, sessions: this._snapshot.sessions.map(row =>
+            seen.includes(row) ? {...row, attention: false} : row)};
+        this._render();
     }
 
     _applySound(screen = null) {

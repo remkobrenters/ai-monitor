@@ -52,7 +52,7 @@ not been recorded. Automated tests mock GNOME's desktop APIs.
 | --- | --- |
 | Linux, GNOME Shell 46–50 | Declared extension targets; GNOME 47–50 need desktop validation |
 | Xorg or Wayland | Native GNOME panel and window activation; no simulated keystrokes |
-| Ubuntu / GNOME Terminal | Exact tab activation and active-tab sound suppression when its D-Bus APIs are available |
+| Ubuntu / GNOME Terminal | Exact tab activation, plus active-tab acknowledgement and sound suppression when its D-Bus APIs are available |
 | tmux | Exact pane selection through one attached client; detached sessions need attaching first |
 | Other local terminals | Window-ID/process matching, with a chooser for ambiguous windows; exact tab selection is not available |
 | High-DPI or smaller displays | Theme-aware panel geometry, bounded menu height, narrower layout with stacked quota cards |
@@ -144,10 +144,13 @@ work; real user questions and approvals take priority.
 
 Sound is suppressed in the identified focused GNOME Terminal tab or active tmux
 pane, and while the desktop is locked. Other waiting terminals can still alert.
-Other terminal applications depend on an inherited X11 window ID. If identity
-cannot be resolved, sound remains eligible. Suppression does not acknowledge the
-session or replay a once-only alert later. Repeated reminders resume after their
-selected interval. Desktop banners follow GNOME's notification controls.
+A waiting session shown in the identified focused GNOME Terminal tab counts as
+seen and is acknowledged, which also stops the panel highlight. Other terminal
+applications depend on an inherited X11 window ID, which cannot tell tabs apart:
+sound is suppressed there, but the session is not acknowledged. If identity
+cannot be resolved, sound remains eligible. Suppression never replays a
+once-only alert later; repeated reminders resume after their selected interval.
+Desktop banners follow GNOME's notification controls.
 
 ## Usage and privacy
 
