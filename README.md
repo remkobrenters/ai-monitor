@@ -1,6 +1,6 @@
 # ai-monitor
 
-**v1.0.0** · [Release notes](docs/releases/v1.0.0.md) · [Privacy](PRIVACY.md) · [Security](SECURITY.md)
+**v1.1.0** · [Release notes](docs/releases/v1.1.0.md) · [Privacy](PRIVACY.md) · [Security](SECURITY.md)
 
 Keep track of Claude Code and Codex without leaving your desktop. One GNOME panel
 menu brings together subscription limits, token usage, terminal sessions, and
@@ -225,7 +225,7 @@ and mock external services; they do not play audio or read personal conversation
 A real Unix-socket test skips when the environment prohibits sockets. The test
 suite does not replace [desktop acceptance checks](docs/desktop-check.md).
 
-`make dist` creates `dist/ai-monitor-1.0.0-source.zip` and a SHA-256 checksum from
+`make dist` creates `dist/ai-monitor-1.1.0-source.zip` and a SHA-256 checksum from
 an explicit allowlist. For an isolated install/uninstall check without contacting
 the desktop or changing real CLI settings:
 
