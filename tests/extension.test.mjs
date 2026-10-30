@@ -242,7 +242,7 @@ test('a narrow scaled monitor keeps usage, sessions and footer actions in a comp
     f.extension._update(data);
     f.extension._button.menu.open();
     const dashboard = f.extension._dashboard;
-    assert.equal(dashboard.actor.style, 'width: 288px;');
+    assert.equal(dashboard.actor.style, 'max-width: 280px;');
     assert.ok(dashboard.actor.style_class.includes('am-dashboard-compact'));
     assert.equal(dashboard.actor.children[1].vertical, true);
     assert.equal(dashboard.sessionButtons.size, 1);
