@@ -1,5 +1,6 @@
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
 import shutil
 import secrets
@@ -13,6 +14,12 @@ spec.loader.exec_module(package)
 
 
 class PackageTests(unittest.TestCase):
+    def test_application_extension_and_release_notes_use_the_same_version(self):
+        metadata = json.loads((package.ROOT / 'extension/metadata.json').read_text())
+        self.assertEqual(metadata['version-name'], package.__version__)
+        notes = package.ROOT / f'docs/releases/v{package.__version__}.md'
+        self.assertTrue(notes.is_file(), 'The current release must include its release notes')
+
     def test_release_excludes_runtime_files_and_keeps_notices_permissions_and_checksum(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / 'source'

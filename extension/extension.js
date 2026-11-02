@@ -358,8 +358,11 @@ export default class AiMonitor extends Extension {
         // The stylesheet sets the normal width; cap it on narrow displays.
         const maxWidth = Math.max(280, Math.floor((workArea.width ?? 1184) / scale) - 44);
         this._dashboard = new Dashboard(this._snapshot, visibleTools, this._settings, id => {
+            // Keep the user event time across the bridge and asynchronous D-Bus calls.
+            // Outside this handler Shell's current event time can be zero.
+            const timestamp = global.get_current_time() || global.display.get_current_time_roundtrip();
             menu.close();
-            this._send({op: 'focus', id});
+            this._send({op: 'focus', id, timestamp});
         }, maxWidth < 480);
         this._dashboard.actor.set_style(`max-width: ${maxWidth}px;`);
         const height = Math.max(120, Math.floor(workArea.height / scale) - 220);
@@ -404,6 +407,8 @@ export default class AiMonitor extends Extension {
     }
 
     _focus(message) {
+        message = {...message, timestamp: message.timestamp || global.get_current_time() ||
+            global.display.get_current_time_roundtrip()};
         const target = message.target;
         if (target.gnomeTerminal) {
             this._focusGnome(message);
@@ -427,11 +432,15 @@ export default class AiMonitor extends Extension {
                         return;
                     }
                     Gio.DBus.session.call(busName, path, iface, 'ActivateResult',
-                        new GLib.Variant('(sasu)', [screenId, [], global.get_current_time()]),
+                        new GLib.Variant('(sasu)', [screenId, [], message.timestamp]),
                         null, Gio.DBusCallFlags.NONE, 2000, this._cancel, (connection, activation) => {
                             if (this._closed) return;
                             try {
                                 connection.call_finish(activation);
+                                // A moved tab retains its original WINDOWID. With multiple
+                                // windows, let the exact screen activation raise the right one.
+                                const matches = this._windowMatches({...message.target, windowId: ''});
+                                if (matches.length === 1) Main.activateWindow(matches[0], message.timestamp);
                                 this._send({op: 'ack', id: message.id});
                             } catch {
                                 this._error('Could not activate this Ubuntu Terminal tab.');
@@ -443,8 +452,7 @@ export default class AiMonitor extends Extension {
             });
     }
 
-    _focusWindow(message) {
-        const target = message.target;
+    _windowMatches(target) {
         const windows = global.get_window_actors().map(actor => actor.meta_window);
         let matches = [];
         if (target.windowId) matches = windows.filter(window => {
@@ -452,8 +460,14 @@ export default class AiMonitor extends Extension {
             return description === target.windowId || description === `0x${Number(target.windowId).toString(16)}`;
         });
         if (!matches.length) matches = windows.filter(window => target.pids.includes(window.get_pid()));
+        return matches;
+    }
+
+    _focusWindow(message) {
+        const target = message.target;
+        const matches = this._windowMatches(target);
         if (matches.length === 1) {
-            Main.activateWindow(matches[0]);
+            Main.activateWindow(matches[0], message.timestamp);
             this._send({op: 'ack', id: message.id});
         } else if (matches.length > 1) {
             const menu = this._button.menu;

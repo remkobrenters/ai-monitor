@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Security fixes target the latest release. Version 1.0.x is the current release
+Security fixes target the latest release. Version 1.2.x is the current release
 line. Dependencies are supplied by the Linux distribution and installed CLIs;
 keep those up to date as well.
 

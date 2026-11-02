@@ -40,7 +40,8 @@ def watch():
                         continue
                     result = request(message)
                     if message.get("op") == "focus":
-                        print(json.dumps({"type": "focus", "id": message.get("id"), "target": result}), flush=True)
+                        print(json.dumps({"type": "focus", "id": message.get("id"), "target": result,
+                                          "timestamp": message.get("timestamp", 0)}), flush=True)
                 except (OSError, ValueError, TypeError) as error:
                     reason = str(error) if isinstance(error, ValueError) else "Could not complete the action. Check the service and terminal."
                     print(json.dumps({"type": "error", "error": reason}), flush=True)

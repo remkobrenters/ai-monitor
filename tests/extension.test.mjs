@@ -10,16 +10,18 @@ async function fixture(orientation = false) {
     const timers = new Map();
     const notifications = [];
     const activations = [];
+    const activationTimes = [];
     const processes = [];
     const windows = [];
     const statusAreas = [];
     const dbusCalls = [];
     const screens = [];
     const desktop = {activeTab: 0, defer: false, pending: [], fail: false};
-    const display = {focus_window: null, connect() { return 1; }, disconnect() {}};
+    const display = {focus_window: null, connect() { return 1; }, disconnect() {},
+        get_current_time_roundtrip: () => 67890};
     const sent = [];
     const geometry = {border: 6, radius: 36, scale: 2, width: 2160, height: 2160};
-    const clock = {seconds: Date.now() / 1000};
+    const clock = {seconds: Date.now() / 1000, eventTime: 12345};
     const preferences = {opened: 0};
     class Actor {
         constructor(props = {}) { this._init(props); }
@@ -83,7 +85,10 @@ async function fixture(orientation = false) {
     }};
     const main = {panel: {addToStatusArea(name) { statusAreas.push(name); }}, sessionMode: {isLocked: false},
         layoutManager: {primaryIndex: 0, getWorkAreaForMonitor: () => ({height: geometry.height, width: geometry.width})},
-        notify: (...args) => notifications.push(args), activateWindow: window => activations.push(window)};
+        notify: (...args) => notifications.push(args), activateWindow: (window, timestamp) => {
+            activations.push(window);
+            activationTimes.push(timestamp);
+        }};
     const sources = {
         cairo: {default: {LineCap: {ROUND: 1}}},
         'gi://Clutter': {default: {ActorAlign: {START: 0, CENTER: 1, END: 2}, Orientation: {VERTICAL: 1}, BinLayout: Actor,
@@ -123,7 +128,7 @@ async function fixture(orientation = false) {
         'resource:///org/gnome/shell/extensions/extension.js': {Extension},
     };
     const context = vm.createContext({console, TextEncoder, TextDecoder, Date,
-        global: {display, get_current_time: () => 12345,
+        global: {display, get_current_time: () => clock.eventTime,
             get_window_actors: () => windows.map(window => ({meta_window: window}))}});
     const modules = new Map();
     async function load(name) {
@@ -146,7 +151,7 @@ async function fixture(orientation = false) {
     const extension = new module.namespace.default();
     extension.enable();
     const snapshot = sessions => ({sessions, usage: {tokens: {}, limits: {}, errors: {}}, collectorError: ''});
-    return {extension, settings, timers, notifications, activations, processes, windows, snapshot, main, statusAreas,
+    return {extension, settings, timers, notifications, activations, activationTimes, processes, windows, snapshot, main, statusAreas,
         dbusCalls, screens, sent, geometry, clock, preferences, desktop, display};
 }
 
@@ -356,8 +361,10 @@ test('Ubuntu Terminal uses screen identity to select the exact tab despite a sha
     const f = await fixture();
     const screenId = '12345678-abcd-abcd-abcd-123456789abc';
     f.screens.push(screenId);
-    f.windows.push(...['Wrong window', 'Other wrong window'].map(title => ({get_pid: () => 123, get_title: () => title})));
-    f.extension._focus({id: 'right-session', target: {pids: [123], windowId: '', tmux: false,
+    f.windows.push(...['0x123', '0x456'].map(id => ({get_pid: () => 123,
+        get_title: () => 'Terminal', get_description: () => `${id} terminal`})));
+    // A tab moved to another window can retain an inherited ID for the old window.
+    f.extension._focus({id: 'right-session', target: {pids: [123], windowId: '291', tmux: false,
         gnomeTerminal: {busName: ':1.77', screenId}}});
     assert.equal(f.activations.length, 0);
     assert.equal(f.dbusCalls.length, 2);
@@ -367,6 +374,68 @@ test('Ubuntu Terminal uses screen identity to select the exact tab despite a sha
     assert.equal(f.dbusCalls[1].params.value[0], screenId);
     assert.equal(f.dbusCalls[1].bus, ':1.77');
     assert.ok(f.sent.some(message => message.op === 'ack' && message.id === 'right-session'));
+    f.extension.disable();
+});
+
+test('a session click raises its exact Ubuntu Terminal window after delayed replies without an event time', async () => {
+    const f = await fixture();
+    const e = f.extension;
+    const screenId = '12345678-abcd-abcd-abcd-123456789abc';
+    f.screens.push(screenId);
+    const wrong = {get_pid: () => 789, get_description: () => '0x456 terminal'};
+    const terminal = {get_pid: () => 123, get_description: () => '0x123 terminal'};
+    const browser = {get_pid: () => 456, get_description: () => '0x789 browser'};
+    f.windows.push(wrong, browser, terminal);
+    f.display.focus_window = browser;
+    e._update(f.snapshot([{id: 'right-session', tool: 'codex', title: 'Worker', state: 'working'}]));
+    e._button.menu.open();
+    e._dashboard.sessionButtons.get('right-session').emit('clicked');
+    assert.equal(e._button.menu.isOpen, false);
+    const request = f.sent.find(message => message.op === 'focus');
+    assert.equal(request.timestamp, 12345);
+
+    f.clock.eventTime = 0;
+    f.desktop.defer = true;
+    e._focus({type: 'focus', id: request.id, timestamp: request.timestamp,
+        target: {pids: [123], windowId: '291', gnomeTerminal: {busName: ':1.77', screenId}}});
+    assert.equal(f.activations.length, 0);
+    f.desktop.pending.shift()(); // The exact screen is still open.
+    const activation = f.dbusCalls.find(call => call.method === 'ActivateResult');
+    assert.equal(activation.params.value[2], request.timestamp);
+    assert.equal(f.activations.length, 0);
+    assert.ok(!f.sent.some(message => message.op === 'ack'));
+    f.desktop.pending.shift()(); // Tab selection completes before Shell raises the window.
+    assert.deepEqual(f.activations, [terminal]);
+    assert.deepEqual(f.activationTimes, [request.timestamp]);
+    assert.ok(f.sent.some(message => message.op === 'ack' && message.id === request.id));
+    e.disable();
+});
+
+test('an ordinary terminal uses the click timestamp and obtains a real time when Shell reports zero', async () => {
+    const f = await fixture();
+    const terminal = {get_pid: () => 123};
+    f.windows.push(terminal);
+    f.clock.eventTime = 0;
+    f.extension._focus({id: 'a', timestamp: 54321, target: {pids: [123]}});
+    f.extension._focus({id: 'a', target: {pids: [123]}});
+    assert.deepEqual(f.activations, [terminal, terminal]);
+    assert.deepEqual(f.activationTimes, [54321, 67890]);
+    f.extension.disable();
+});
+
+test('a failed Ubuntu Terminal tab activation does not raise a window or acknowledge the session', async () => {
+    const f = await fixture();
+    f.screens.push('screen');
+    f.windows.push({get_pid: () => 123});
+    f.desktop.defer = true;
+    f.extension._focus({id: 'failed', target: {pids: [123],
+        gnomeTerminal: {busName: ':1.77', screenId: 'screen'}}});
+    f.desktop.pending.shift()();
+    f.desktop.fail = true;
+    f.desktop.pending.shift()();
+    assert.equal(f.activations.length, 0);
+    assert.ok(!f.sent.some(message => message.op === 'ack'));
+    assert.ok(f.notifications.some(([, body]) => body.includes('Could not activate')));
     f.extension.disable();
 });
 

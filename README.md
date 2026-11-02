@@ -1,6 +1,6 @@
 # ai-monitor
 
-**v1.1.0** · [Release notes](docs/releases/v1.1.0.md) · [Privacy](PRIVACY.md) · [Security](SECURITY.md)
+**v1.2.0** · [Release notes](docs/releases/v1.2.0.md) · [Privacy](PRIVACY.md) · [Security](SECURITY.md)
 
 Keep track of Claude Code and Codex without leaving your desktop. One GNOME panel
 menu brings together subscription limits, token usage, terminal sessions, and
@@ -33,7 +33,7 @@ above the footer; current controls are described below. Click to view full size.
   Settings; both are hidden by default. Rows highlight on hover.
 - **Terminal sessions:** native session names, working-directory paths, and
   explicit working, approval, question, and finished-turn states. Click a session
-  to return to its terminal.
+  to bring its terminal to the front with the correct tab or tmux pane selected.
 - **Subagent activity:** the parent row shows an active count, with messages such
   as “Working · 3 subagents” or “Waiting for 3 subagents to finish.”
 - **Optional attention alerts:** a purple panel highlight, desktop banners, and
@@ -225,7 +225,7 @@ and mock external services; they do not play audio or read personal conversation
 A real Unix-socket test skips when the environment prohibits sockets. The test
 suite does not replace [desktop acceptance checks](docs/desktop-check.md).
 
-`make dist` creates `dist/ai-monitor-1.1.0-source.zip` and a SHA-256 checksum from
+`make dist` creates `dist/ai-monitor-1.2.0-source.zip` and a SHA-256 checksum from
 an explicit allowlist. For an isolated install/uninstall check without contacting
 the desktop or changing real CLI settings:
 

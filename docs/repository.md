@@ -12,10 +12,12 @@ Standalone GNOME monitor for Claude Code and Codex: subscription limits, token u
 
 ## Release
 
-- Git tag: `v1.1.0`
-- Title: **ai-monitor v1.1.0 — Quiet for the tab you are in**
-- Body: [v1.1.0 release notes](releases/v1.1.0.md)
-- Asset: `ai-monitor-1.1.0-source.zip` and its `.sha256` checksum
+- Git tag: `v1.2.0`
+- Title: **ai-monitor v1.2.0**
+- Body: [v1.2.0 release notes](releases/v1.2.0.md)
+- Asset: `ai-monitor-1.2.0-source.zip` and its `.sha256` checksum
 
-The text is ready to copy into GitHub. Preparing these files does not publish a
-release or change repository settings.
+Pushing a `v*` tag runs the Checks workflow on x86-64 and ARM64. After both jobs
+pass, GitHub publishes the release with the matching notes, source archive, and
+checksum. The tag must match the application version. Branch pushes and pull
+requests run checks without publishing.
