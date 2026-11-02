@@ -5,17 +5,26 @@ import argparse
 import json
 import os
 from pathlib import Path
+import platform
+import plistlib
 import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from ai_monitor import __version__
 from ai_monitor.paths import private_json
 
 UUID = "ai-monitor@local"
+MACOS = sys.platform == "darwin"
+LABEL = "io.github.remkobrenters.ai-monitor"
+MENU_LABEL = f"{LABEL}.menu"  # Also the menu bar app's bundle ID and preferences domain.
+MENU_EXECUTABLE = "ai-monitor-menu"
+SWIFT_SOURCES = ("macos/Logic.swift", "macos/App.swift")
 EVENTS = {"claude": ("SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse",
                      "PostToolUseFailure", "PermissionRequest", "Notification", "Stop", "SubagentStart", "SubagentStop"),
           "codex": ("SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse",
@@ -24,6 +33,17 @@ EVENTS = {"claude": ("SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolU
 
 def run(*args, check=True):
     return subprocess.run(args, check=check, text=True, capture_output=True)
+
+
+def interpreter():
+    """Linux uses the system Python. macOS uses the Python running the installer, through
+    its PATH link when there is one, so Homebrew upgrades keep the hooks working."""
+    if not MACOS:
+        return "/usr/bin/python3"
+    found = shutil.which("python3")
+    if found and os.path.realpath(found) == os.path.realpath(sys.executable):
+        return found
+    return sys.executable
 
 
 def read_object(path):
@@ -68,10 +88,19 @@ class Installation:
         self.config = stage / "config" if stage else Path(os.environ.get("XDG_CONFIG_HOME", self.home / ".config"))
         self.state = (stage / "state" if stage else Path(os.environ.get("XDG_STATE_HOME", self.home / ".local/state"))) / "ai-monitor"
         self.app = self.data / "ai-monitor"
-        self.extension = self.data / f"gnome-shell/extensions/{UUID}"
         self.launcher = self.home / ".local/bin/ai-monitor"
-        self.unit = self.config / "systemd/user/ai-monitor.service"
         self.manifest = self.state / "install.json"
+        self.python = interpreter()
+        if MACOS:
+            # The menu bar app replaces the GNOME extension; LaunchAgents replace systemd.
+            self.extension = self.home / "Applications/AI Monitor.app"
+            self.sounds = self.extension / "Contents/Resources/sounds"
+            self.unit = self.home / f"Library/LaunchAgents/{LABEL}.plist"
+            self.menu_unit = self.home / f"Library/LaunchAgents/{MENU_LABEL}.plist"
+        else:
+            self.extension = self.data / f"gnome-shell/extensions/{UUID}"
+            self.sounds = self.extension / "sounds"
+            self.unit = self.config / "systemd/user/ai-monitor.service"
         self.tool_homes = {
             "claude": self.home / ".claude" if stage else Path(os.environ.get("CLAUDE_CONFIG_DIR", self.home / ".claude")),
             "codex": self.home / ".codex" if stage else Path(os.environ.get("CODEX_HOME", self.home / ".codex"))}
@@ -97,11 +126,14 @@ class Installation:
 
     def preflight(self):
         if sys.version_info < (3, 11):
-            raise ValueError("Python 3.11+ is required")
-        if not shutil.which("glib-compile-schemas"):
+            raise ValueError("Python 3.11+ is required" + (" (for example: brew install python)" if MACOS else ""))
+        if MACOS:
+            if not self.stage and not shutil.which("swiftc"):
+                raise ValueError("Install the Xcode Command Line Tools first: xcode-select --install")
+        elif not shutil.which("glib-compile-schemas"):
             raise ValueError("Install libglib2.0-bin first")
         # Never follow a directory symlink while replacing installed files.
-        managed = (self.app, self.extension, self.launcher, self.unit, self.state)
+        managed = (self.app, self.extension, self.launcher, self.unit, self.state, *([self.menu_unit] if MACOS else []))
         for path in (*managed, *self.tool_homes.values()):
             if any(character in str(path) for character in ('\n', '\r', '\0')):
                 raise ValueError('Installation paths must not contain control characters')
@@ -114,7 +146,11 @@ class Installation:
         if os.getuid() == 0:
             raise ValueError("Run as your desktop user, without sudo")
         if os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_TTY"):
-            raise ValueError("Install from a terminal on your local GNOME desktop")
+            raise ValueError("Install from a terminal on your local " + ("Mac" if MACOS else "GNOME desktop"))
+        if MACOS:
+            if int(platform.mac_ver()[0].split(".")[0] or 0) < 13:
+                raise ValueError("macOS 13 or later is required")
+            return
         version = run("gnome-shell", "--version").stdout.split()[-1].split(".")[0]
         if version not in ("46", "47", "48", "49", "50"):
             raise ValueError("GNOME Shell 46–50 is required")
@@ -132,7 +168,7 @@ class Installation:
             for tool, directory in self.tool_homes.items():
                 path = directory / ("settings.json" if tool == "claude" else "hooks.json")
                 settings = read_object(path)
-                command = f"/usr/bin/python3 {shlex.quote(str(self.app / 'entry.py'))} hook {tool}"
+                command = f"{shlex.quote(self.python)} {shlex.quote(str(self.app / 'entry.py'))} hook {tool}"
                 prior = next((record for record in records if record["path"] == str(path)), None)
                 if prior:
                     remove_handlers(settings, prior["command"])
@@ -142,14 +178,33 @@ class Installation:
                     settings.setdefault("hooks", {}).setdefault(event, []).append({"hooks": [
                         {"type": "command", "command": command, "timeout": 2}]})
                 planned.append((path, settings, {**record, 'command': command}))
-        print(f"Application: {self.app}\nExtension: {self.extension}\nCommand: {self.launcher}\nService: {self.unit}")
+        print(f"Application: {self.app}\n{'Menu bar app' if MACOS else 'Extension'}: {self.extension}\n"
+              f"Command: {self.launcher}\nService: {self.unit}" + (f"\nMenu bar agent: {self.menu_unit}" if MACOS else ""))
         for path, _, _ in planned:
             print(f"Merge passive hooks: {path}")
         if dry_run:
             return
+        with tempfile.TemporaryDirectory(prefix="ai-monitor-build-") as build:
+            # Compile before stopping anything, so a failed build leaves the old installation running.
+            menu = self.build_menu(Path(build)) if MACOS and not self.stage else None
+            self.install_files(planned, records, menu)
+
+    def build_menu(self, directory):
+        output = directory / MENU_EXECUTABLE
+        try:
+            run("swiftc", "-O", "-parse-as-library", "-o", str(output), *(str(ROOT / name) for name in SWIFT_SOURCES))
+        except subprocess.CalledProcessError as error:
+            raise ValueError(f"Could not build the menu bar app:\n{error.stderr.strip()}") from None
+        return output
+
+    def install_files(self, planned, records, menu):
         if not self.stage:
-            run("gnome-extensions", "disable", UUID, check=False)
-            run("systemctl", "--user", "stop", "ai-monitor.service", check=False)
+            if MACOS:
+                for label in (MENU_LABEL, LABEL):
+                    run("launchctl", "bootout", f"gui/{os.getuid()}/{label}", check=False)
+            else:
+                run("gnome-extensions", "disable", UUID, check=False)
+                run("systemctl", "--user", "stop", "ai-monitor.service", check=False)
         for path in (self.app, self.extension, self.unit.parent, self.launcher.parent, self.state):
             path.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.state.chmod(0o700)
@@ -160,17 +215,22 @@ class Installation:
             path.mkdir(mode=0o700)
         shutil.copytree(ROOT / "ai_monitor", self.app / "ai_monitor", dirs_exist_ok=True,
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-        shutil.copytree(ROOT / "extension", self.extension, dirs_exist_ok=True,
-                        ignore=shutil.ignore_patterns("gschemas.compiled"))
+        if not MACOS:
+            shutil.copytree(ROOT / "extension", self.extension, dirs_exist_ok=True,
+                            ignore=shutil.ignore_patterns("gschemas.compiled"))
         # Keep uninstall available even after the source checkout/archive is deleted.
         (self.app / "scripts").mkdir(exist_ok=True)
         shutil.copy2(ROOT / "scripts/manage.py", self.app / "scripts/manage.py")
-        shutil.copytree(ROOT / "extension/schemas", self.app / "extension/schemas", dirs_exist_ok=True,
-                        ignore=shutil.ignore_patterns("gschemas.compiled"))
+        if not MACOS:
+            shutil.copytree(ROOT / "extension/schemas", self.app / "extension/schemas", dirs_exist_ok=True,
+                            ignore=shutil.ignore_patterns("gschemas.compiled"))
         entry = self.app / "entry.py"
         entry.write_text("from ai_monitor.__main__ import main\nmain()\n")
-        self.launcher.write_text(f"#!/bin/sh\nexec /usr/bin/python3 {shlex.quote(str(entry))} \"$@\"\n")
+        self.launcher.write_text(f"#!/bin/sh\nexec {shlex.quote(self.python)} {shlex.quote(str(entry))} \"$@\"\n")
         self.launcher.chmod(0o755)
+        if MACOS:
+            self.install_macos(entry, planned, records, menu)
+            return
         quoted = str(entry).replace("%", "%%").replace("\\", "\\\\").replace('"', '\\"')
         environment = []
         for name, value in (("CLAUDE_CONFIG_DIR", self.tool_homes["claude"]), ("CODEX_HOME", self.tool_homes["codex"]),
@@ -183,12 +243,7 @@ class Installation:
                              "Restart=on-failure\nRestartSec=3\nUMask=0077\nRuntimeDirectory=ai-monitor\n"
                              "RuntimeDirectoryMode=0700\nNoNewPrivileges=true\n\n[Install]\nWantedBy=graphical-session.target\n")
         run("glib-compile-schemas", "--strict", str(self.extension / "schemas"))
-        # Persist each ownership record before editing settings, so partial installs remain removable.
-        for path, settings, record in planned:
-            records = [r for r in records if r["path"] != str(path)] + [record]
-            private_json(self.manifest, {"hooks": records})
-            private_json(path, settings)
-        private_json(self.manifest, {"hooks": records})
+        self.write_hooks(planned, records)
         if not self.stage:
             run("systemctl", "--user", "daemon-reload")
             run("systemctl", "--user", "enable", "--now", "ai-monitor.service")
@@ -207,6 +262,64 @@ Gio.Settings.sync()
               "If GNOME extensions are globally disabled, enable them in the Extensions app.\n"
               "Uninstall: ai-monitor uninstall (keeps history); ai-monitor uninstall --purge (also removes history/preferences).")
 
+    def write_hooks(self, planned, records):
+        # Persist each ownership record before editing settings, so partial installs remain removable.
+        for path, settings, record in planned:
+            records = [r for r in records if r["path"] != str(path)] + [record]
+            private_json(self.manifest, {"hooks": records})
+            private_json(path, settings)
+        private_json(self.manifest, {"hooks": records})
+
+    def environment(self):
+        values = {"CLAUDE_CONFIG_DIR": self.tool_homes["claude"], "CODEX_HOME": self.tool_homes["codex"],
+                  "XDG_DATA_HOME": self.data, "XDG_STATE_HOME": self.state.parent,
+                  # launchd starts agents with a minimal PATH; the CLIs and Node live in the user's.
+                  "PATH": os.environ.get("PATH", "/usr/bin:/bin")}
+        if os.environ.get("XDG_RUNTIME_DIR") and not self.stage:
+            values["XDG_RUNTIME_DIR"] = os.environ["XDG_RUNTIME_DIR"]
+        return {name: str(value) for name, value in values.items()}
+
+    def install_macos(self, entry, planned, records, menu):
+        contents = self.extension / "Contents"
+        (contents / "MacOS").mkdir(parents=True)
+        shutil.copytree(ROOT / "extension/sounds", self.sounds)
+        with (contents / "Info.plist").open("wb") as stream:
+            plistlib.dump({"CFBundleIdentifier": MENU_LABEL, "CFBundleName": "AI Monitor",
+                           "CFBundleDisplayName": "AI Monitor", "CFBundleExecutable": MENU_EXECUTABLE,
+                           "CFBundlePackageType": "APPL", "CFBundleShortVersionString": __version__,
+                           "CFBundleVersion": __version__, "LSMinimumSystemVersion": "13.0", "LSUIElement": True,
+                           "NSAppleEventsUsageDescription":
+                               "AI Monitor selects the terminal tab of the agent you choose and checks which tab is visible.",
+                           "AIMonitorPython": self.python, "AIMonitorEntry": str(entry)}, stream)
+        if menu:
+            shutil.copy2(menu, contents / "MacOS" / MENU_EXECUTABLE)
+            # An ad-hoc signature binds Info.plist, giving notifications and automation a stable identity.
+            run("codesign", "--force", "--sign", "-", str(self.extension))
+        logs = self.state / "logs"
+        logs.mkdir(mode=0o700, exist_ok=True)
+        common = {"EnvironmentVariables": self.environment(), "RunAtLoad": True, "Umask": 0o077,
+                  "KeepAlive": {"SuccessfulExit": False}, "ThrottleInterval": 3}
+        with self.unit.open("wb") as stream:
+            plistlib.dump({"Label": LABEL, "ProgramArguments": [self.python, str(entry), "serve"],
+                           "StandardErrorPath": str(logs / "service.log"), **common}, stream)
+        with self.menu_unit.open("wb") as stream:
+            plistlib.dump({"Label": MENU_LABEL, "ProgramArguments": [str(contents / "MacOS" / MENU_EXECUTABLE)],
+                           "LimitLoadToSessionType": "Aqua", "ProcessType": "Interactive",
+                           "StandardErrorPath": str(logs / "menu.log"), **common}, stream)
+        self.write_hooks(planned, records)
+        if not self.stage:
+            for label, unit in ((LABEL, self.unit), (MENU_LABEL, self.menu_unit)):
+                run("launchctl", "enable", f"gui/{os.getuid()}/{label}")
+                # launchd may still be removing the previous job right after bootout.
+                for attempt in range(5):
+                    if run("launchctl", "bootstrap", f"gui/{os.getuid()}", str(unit), check=attempt == 4).returncode == 0:
+                        break
+                    time.sleep(1)
+        print("Installed ai-monitor. Its Claude and Codex indicators are in the menu bar.\n"
+              "Restart existing Claude/Codex sessions to load hooks. In Codex, open /hooks and review/trust ai-monitor's hooks.\n"
+              "When macOS asks, allow AI Monitor to send notifications and to control Terminal or iTerm (exact tab selection).\n"
+              "Uninstall: ai-monitor uninstall (keeps history); ai-monitor uninstall --purge (also removes history/preferences).")
+
     def uninstall(self, purge=False, dry_run=False):
         # Validate all settings before removing any application files.
         records = self.previous()["hooks"]
@@ -220,7 +333,8 @@ Gio.Settings.sync()
             if record.get('emptyHooks') and 'hooks' not in settings:
                 settings['hooks'] = {}
             planned.append((path, settings, record.get('created', False)))
-        print("Remove ai-monitor's hooks, service, command and extension" + ("; purge history/preferences" if purge else "; keep history/preferences"))
+        print("Remove ai-monitor's hooks, service, command and " + ("menu bar app" if MACOS else "extension") +
+              ("; purge history/preferences" if purge else "; keep history/preferences"))
         if dry_run:
             return
         for path, settings, created in planned:
@@ -228,7 +342,14 @@ Gio.Settings.sync()
                 path.unlink()
             else:
                 private_json(path, settings)
-        if not self.stage:
+        if MACOS:
+            if not self.stage:
+                for label in (MENU_LABEL, LABEL):
+                    run("launchctl", "bootout", f"gui/{os.getuid()}/{label}", check=False)
+                if purge:
+                    run("defaults", "delete", MENU_LABEL, check=False)
+            self.menu_unit.unlink(missing_ok=True)
+        elif not self.stage:
             run("gnome-extensions", "disable", UUID, check=False)
             run("systemctl", "--user", "disable", "--now", "ai-monitor.service", check=self.unit.exists())
             if purge:
@@ -255,7 +376,7 @@ Gio.Settings.sync()
         self.manifest.unlink(missing_ok=True)
         if purge and self.state.exists():
             shutil.rmtree(self.state)
-        if not self.stage:
+        if not self.stage and not MACOS:
             run("systemctl", "--user", "daemon-reload")
         print("Uninstalled ai-monitor.")
 

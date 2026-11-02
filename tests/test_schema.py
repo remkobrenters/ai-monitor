@@ -1,11 +1,25 @@
 import os
 from pathlib import Path
+import re
+import shutil
 import subprocess
 import tempfile
 import unittest
+import xml.etree.ElementTree as ElementTree
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class SchemaTests(unittest.TestCase):
+    def test_macos_preferences_use_the_gnome_schema_keys_and_defaults(self):
+        schema = ElementTree.parse(ROOT / "extension/schemas/org.gnome.shell.extensions.ai-monitor.gschema.xml")
+        expected = {key.get("name"): key.findtext("default").strip("'") for key in schema.iter("key")}
+        source = (ROOT / "macos/App.swift").read_text()
+        literal = re.search(r"let DEFAULTS: \[String: Any\] = \[(.*?)\]\n", source, re.S)[1]
+        actual = {name: value.strip('"') for name, value in re.findall(r'"([a-z-]+)": ("[^"]*"|\w+)', literal)}
+        self.assertEqual(actual, expected)
+
+    @unittest.skipUnless(shutil.which("glib-compile-schemas") and shutil.which("gjs"), "GNOME schema tools are not installed")
     def test_real_gsettings_schema_defaults_and_ranges_without_desktop(self):
         source = Path(__file__).resolve().parents[1] / "extension/schemas/org.gnome.shell.extensions.ai-monitor.gschema.xml"
         with tempfile.TemporaryDirectory() as temporary:

@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
 
 
@@ -11,8 +12,11 @@ def state_dir():
 
 
 def socket_path():
-    runtime = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
-    return Path(runtime) / "ai-monitor/control.sock"
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if not runtime and sys.platform == "darwin":
+        # macOS has no per-user runtime directory; the private state directory serves instead.
+        return state_dir() / "run/control.sock"
+    return Path(runtime or f"/run/user/{os.getuid()}") / "ai-monitor/control.sock"
 
 
 def private_json(path, value):

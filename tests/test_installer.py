@@ -3,7 +3,10 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import plistlib
+import shlex
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -16,7 +19,7 @@ class InstallerTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="ai-monitor install 'space ")
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.installation = manage.Installation(self.root)
         self.claude = self.root / "home/.claude/settings.json"
         self.codex = self.root / "home/.codex/hooks.json"
@@ -40,7 +43,7 @@ class InstallerTests(unittest.TestCase):
         self.assertTrue(self.installation.unit.exists())
         for number in (1, 2, 3):
             name = f'sound_effect_{number}.mp3'
-            self.assertEqual((self.installation.extension / 'sounds' / name).read_bytes(),
+            self.assertEqual((self.installation.sounds / name).read_bytes(),
                              (manage.ROOT / 'extension/sounds' / name).read_bytes())
         result = subprocess.run([str(self.installation.launcher), "--help"], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -114,7 +117,7 @@ class InstallerTests(unittest.TestCase):
         self.claude.write_text(json.dumps({'env': {'API_KEY': 'fixture-secret'}}))
         self.installation.install()
         self.assertNotIn('fixture-secret', self.installation.manifest.read_text())
-        stale = self.installation.extension / 'obsolete.js'
+        stale = self.installation.sounds.parent / 'obsolete.js'
         stale.write_text('old module')
         self.installation.install()
         self.assertFalse(stale.exists())
@@ -138,9 +141,30 @@ class InstallerTests(unittest.TestCase):
     def test_installed_uninstaller_does_not_need_source_checkout(self):
         self.installation.install()
         manager = self.installation.app / "scripts/manage.py"
-        result = subprocess.run(["/usr/bin/python3", str(manager), "uninstall", "--destdir", str(self.root), "--purge"],
+        result = subprocess.run([sys.executable, str(manager), "uninstall", "--destdir", str(self.root), "--purge"],
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(self.installation.app.exists())
         self.assertFalse(self.claude.exists())
         self.assertFalse(self.installation.state.exists())
+
+    @unittest.skipUnless(manage.MACOS, "macOS layout")
+    def test_macos_install_registers_launch_agents_and_menu_bar_app(self):
+        self.installation.install()
+        service = plistlib.loads(self.installation.unit.read_bytes())
+        entry = str(self.installation.app / "entry.py")
+        self.assertEqual(service["ProgramArguments"], [self.installation.python, entry, "serve"])
+        self.assertEqual(service["EnvironmentVariables"]["XDG_STATE_HOME"], str(self.installation.state.parent))
+        self.assertIn("PATH", service["EnvironmentVariables"])
+        menu = plistlib.loads(self.installation.menu_unit.read_bytes())
+        self.assertEqual(menu["ProgramArguments"],
+                         [str(self.installation.extension / "Contents/MacOS" / manage.MENU_EXECUTABLE)])
+        info = plistlib.loads((self.installation.extension / "Contents/Info.plist").read_bytes())
+        self.assertEqual(info["CFBundleIdentifier"], manage.MENU_LABEL)
+        self.assertTrue(info["LSUIElement"])
+        self.assertEqual((info["AIMonitorPython"], info["AIMonitorEntry"]), (self.installation.python, entry))
+        hooks = json.loads(self.claude.read_text())["hooks"]["Stop"][0]["hooks"][0]["command"]
+        self.assertEqual(hooks, f"{shlex.quote(self.installation.python)} {shlex.quote(entry)} hook claude")
+        self.installation.uninstall(purge=True)
+        for path in (self.installation.unit, self.installation.menu_unit, self.installation.extension):
+            self.assertFalse(path.exists())

@@ -25,3 +25,16 @@ Automated checks use isolated settings and mocked desktop APIs.
 11. Add a harmless unrelated hook/setting. Uninstall; confirm that hook/setting remains while ai-monitor's handlers, service, CLI and extension disappear. Reinstall and verify retained history/preferences. Uninstall with `--purge`; confirm ai-monitor history/preferences are removed.
 
 Record GNOME version, Xorg/Wayland, terminal application, CLI versions and observed results. Capture only sample project names when taking screenshots.
+
+## macOS
+
+Status: **partly run**. On Apple silicon with macOS 26 and Terminal.app, the
+developer confirmed a real `./install.sh`, both LaunchAgents running, and the
+Claude allowance read through Claude Code's Keychain login. The remaining steps
+have not been recorded. Automated checks cover the logic, process discovery and a
+staged install.
+
+1. Run `make check`, then `./install.sh --dry-run` and `./install.sh`. Verify `./status.sh` shows both LaunchAgents running and the Claude/Codex indicators appear in the menu bar.
+2. Repeat steps 3, 4 and 7–11 above with the menu bar item, the Settings window and macOS notifications. Allow notifications when asked.
+3. Open several Terminal windows and tabs (and iTerm2 if available). Click a session: allow automation when asked, then verify the exact tab and window come to the front. Decline automation for another app and verify it is still brought to the front. Verify a waiting session in the front tab is acknowledged and silent, while other tabs still alert.
+4. Verify sessions in other terminals or IDEs bring their app to the front, and that the Claude allowance appears using the Keychain login.

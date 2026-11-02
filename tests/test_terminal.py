@@ -2,7 +2,12 @@ import os
 from unittest.mock import patch
 import unittest
 
-from ai_monitor.terminal import alive, ancestors, focus_target, process, gnome_target, visible_views
+from ai_monitor import darwin
+from ai_monitor.terminal import MACOS, alive, ancestors, focus_target, mac_target, process, gnome_target, visible_views
+
+
+def expected_view(**values):
+    return {**values, 'macTerminal': values.get('macTerminal')} if MACOS else values
 
 
 class TerminalTests(unittest.TestCase):
@@ -18,11 +23,12 @@ class TerminalTests(unittest.TestCase):
             return {'WINDOWID': str(pid)}
 
         cache = {}
-        with patch('ai_monitor.terminal.process_environment', side_effect=environment):
+        with patch('ai_monitor.terminal.process_environment', side_effect=environment), \
+                patch('ai_monitor.terminal.controlling_tty', return_value=''):
             self.assertEqual(visible_views(self.terminal(), cache, runner),
-                             [{'windowId': '123', 'gnomeTerminal': None}])
+                             [expected_view(windowId='123', gnomeTerminal=None)])
             self.assertEqual(visible_views({**self.terminal(), 'tmuxPane': '%4', 'tty': '/dev/pts/43'}, cache, runner),
-                             [{'windowId': '456', 'gnomeTerminal': None}])
+                             [expected_view(windowId='456', gnomeTerminal=None)])
             self.assertEqual(len(calls), 1)
 
     def test_detached_tmux_never_reuses_the_servers_original_window(self):
@@ -35,7 +41,7 @@ class TerminalTests(unittest.TestCase):
     def test_plain_terminal_visibility_preserves_gnome_screen_identity(self):
         target = {'busName': ':1.42', 'screenId': 'screen'}
         terminal = {**self.terminal(), 'tmuxSocket': '', 'gnomeTerminal': target}
-        self.assertEqual(visible_views(terminal), [{'windowId': '', 'gnomeTerminal': target}])
+        self.assertEqual(visible_views(terminal), [expected_view(windowId='', gnomeTerminal=target)])
 
     def test_ubuntu_tab_identity_is_normalized_and_preserved_for_focus(self):
         environment = {'GNOME_TERMINAL_SERVICE': ':1.42',
@@ -108,3 +114,31 @@ class TerminalTests(unittest.TestCase):
         with patch("ai_monitor.terminal.alive", return_value=False):
             with self.assertRaisesRegex(ValueError, "exited"):
                 focus_target(self.terminal())
+
+    def test_macos_target_keeps_only_a_valid_bundle_id_and_tab_tty(self):
+        self.assertEqual(mac_target({'__CFBundleIdentifier': 'com.apple.Terminal'}, '/dev/ttys004'),
+                         {'bundleId': 'com.apple.Terminal', 'tty': '/dev/ttys004'})
+        self.assertEqual(mac_target({'__CFBundleIdentifier': 'bad" & do shell script'}, '/dev/ttys004'),
+                         {'bundleId': '', 'tty': '/dev/ttys004'})
+        self.assertEqual(mac_target({}, '/dev/ttys1" then'), None)
+        self.assertEqual(mac_target({'__CFBundleIdentifier': 'com.googlecode.iterm2'}, '/dev/pts/3'),
+                         {'bundleId': 'com.googlecode.iterm2', 'tty': ''})
+
+    def test_macos_process_arguments_and_environment_are_split_from_procargs(self):
+        raw = (2).to_bytes(4, 'little') + b'/usr/local/bin/claude\0\0\0\0claude\0--resume\0' \
+            b'TERM_PROGRAM=Apple_Terminal\0__CFBundleIdentifier=com.apple.Terminal\0\0\0ignored\0'
+        self.assertEqual(darwin.parse_procargs(raw), ([b'claude', b'--resume'],
+                         [b'TERM_PROGRAM=Apple_Terminal', b'__CFBundleIdentifier=com.apple.Terminal']))
+        with self.assertRaises(OSError):
+            darwin.parse_procargs(b'\0')
+
+    @unittest.skipUnless(MACOS, 'macOS process APIs')
+    def test_macos_process_identity_tty_and_directory_come_from_libproc(self):
+        identity = darwin.process(os.getpid())
+        self.assertEqual(identity['parent'], os.getppid())
+        self.assertGreater(darwin.started(identity), 0)
+        self.assertEqual(darwin.uid(os.getpid()), os.getuid())
+        self.assertEqual(darwin.cwd(os.getpid()), os.path.realpath(os.getcwd()))
+        self.assertIn(os.getpid(), darwin.pids())
+        self.assertTrue(darwin.arguments(os.getpid()))
+        self.assertIsNone(darwin.process(-1))

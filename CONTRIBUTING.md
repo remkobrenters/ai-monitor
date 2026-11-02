@@ -6,8 +6,10 @@ Keep changes focused and preserve the standalone, local-first architecture.
 ## Development
 
 Requirements: Python 3.11+, Node.js 18+, `gjs`, `glib-compile-schemas`, and the
-system GI packages used by the preferences window. No Python or npm package
-installation is needed.
+system GI packages used by the preferences window. On macOS: Python 3.11+ and the
+Xcode Command Line Tools; `make check` then type-checks `macos/` and runs
+`macos/tests`. No Python or npm package installation is needed. Keep
+`macos/Logic.swift` in step with `extension/logic.js`.
 
 Run focused tests while editing, then `make check` before submitting a change.
 `make dist` verifies the distributable source allowlist and emits its checksum.

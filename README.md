@@ -3,8 +3,8 @@
 **v1.2.0** · [Release notes](docs/releases/v1.2.0.md) · [Privacy](PRIVACY.md) · [Security](SECURITY.md)
 
 Keep track of Claude Code and Codex without leaving your desktop. One GNOME panel
-menu brings together subscription limits, token usage, terminal sessions, and
-optional alerts when an agent needs your input.
+menu, or one macOS menu bar item, brings together subscription limits, token usage,
+terminal sessions, and optional alerts when an agent needs your input.
 
 ai-monitor is standalone. It uses your existing CLI logins, runs as your desktop
 user, and requires no separate account or paid API key.
@@ -22,6 +22,19 @@ above the footer; current controls are described below. Click to view full size.
 | Normal panel | An agent needs attention |
 | --- | --- |
 | ![Claude and Codex allowance indicators](docs/screenshots/panel-normal.png) | ![Purple highlight behind Codex when it needs attention](docs/screenshots/panel-attention.png) |
+
+### macOS
+
+Rendered from the menu bar app's own views with sample data; no real sessions or
+usage are shown.
+
+| Dark theme | Light theme |
+| --- | --- |
+| [![macOS dashboard in dark mode with subscription bars, terminal sessions, and token totals](docs/screenshots/macos-dashboard-dark.png)](docs/screenshots/macos-dashboard-dark.png) | [![macOS dashboard in light mode with subscription bars, terminal sessions, and token totals](docs/screenshots/macos-dashboard-light.png)](docs/screenshots/macos-dashboard-light.png) |
+
+| Normal menu bar | Agents need attention |
+| --- | --- |
+| ![Claude and Codex allowance indicators in the macOS menu bar](docs/screenshots/macos-menubar-normal.png) | ![Purple highlight behind Claude and Codex in a dark menu bar](docs/screenshots/macos-menubar-attention.png) |
 
 ## Features
 
@@ -58,11 +71,16 @@ not been recorded. Automated tests mock GNOME's desktop APIs.
 | High-DPI or smaller displays | Theme-aware panel geometry, bounded menu height, narrower layout with stacked quota cards |
 | x86-64 / ARM64 | No bundled native executable; system Python/GJS and the installed CLIs must support the architecture. Hardware validation is still needed |
 | SSH, containers, remote agents | No remote terminal forwarding |
-| KDE, Xfce, macOS, Windows | Not supported |
+| macOS 13+ (menu bar app) | Same service, hooks and dashboard; see [macOS](#macos). Apple silicon, macOS 26 and Terminal.app used for development; full desktop validation pending |
+| macOS Terminal / iTerm2 | Exact tab selection, plus front-tab acknowledgement and sound suppression once automation is allowed |
+| Other macOS terminals and IDEs | The app is brought to the front; exact tab or window selection is not available |
+| KDE, Xfce, Windows | Not supported |
 
-Requirements: Python 3.11+, GNOME Shell 46–50, GSettings, GTK 4.10+,
-libadwaita 1.4+ with Python GI bindings, and a systemd user session. Install a recent
-Claude Code and/or Codex CLI with lifecycle hooks. tmux is optional.
+Requirements on Linux: Python 3.11+, GNOME Shell 46–50, GSettings, GTK 4.10+,
+libadwaita 1.4+ with Python GI bindings, and a systemd user session. Requirements on
+macOS: macOS 13+, Python 3.11+ (for example from Homebrew), and the Xcode Command Line
+Tools (`xcode-select --install`) to build the menu bar app. Install a recent Claude
+Code and/or Codex CLI with lifecycle hooks. tmux is optional.
 
 Please report compatibility results with the distribution, GNOME version, session
 type, terminal, display scale, and CLI versions. See [Contributing](CONTRIBUTING.md).
@@ -114,6 +132,36 @@ Optional installer flags:
 
 Put `~/.local/bin` in your PATH to use the `ai-monitor` command directly.
 
+### macOS
+
+From the source directory, in a terminal on your Mac, **without sudo**:
+
+```sh
+./install.sh
+```
+
+The installer uses the `python3` on your PATH (3.11+), builds the menu bar app with
+the Xcode Command Line Tools, and installs it as `~/Applications/AI Monitor.app`.
+Two LaunchAgents start the service and the menu bar app at login; the same passive
+hooks are merged into the CLI settings. `--dry-run` and `--no-hooks` work as above.
+The service is given your current PATH, so install from a shell where `claude`,
+`codex` and Node.js resolve. Run the installer again after moving them, or after
+removing the Python it used.
+
+Then restart Claude/Codex and, in Codex, trust the hooks with **`/hooks`**. When
+macOS asks:
+
+- allow **notifications** for attention banners;
+- allow AI Monitor to **control Terminal or iTerm** the first time you click one of
+  their sessions. This selects the exact tab and lets a waiting session in the front
+  tab count as seen. If you decline, clicking still brings the app to the front.
+
+Claude allowances are read with Claude Code's own Keychain item (`security
+find-generic-password`). Settings live in the cog → **Settings** window, which also
+has **Quit AI Monitor**; the app starts again at the next login. The app is
+ad-hoc signed during installation, so macOS may ask for these permissions again
+after a reinstall.
+
 ## Sessions and alerts
 
 Launch the CLIs normally. Native names are matched by exact session ID rather
@@ -143,7 +191,9 @@ session restart or interruption clears tracking. Waiting for subagents counts as
 work; real user questions and approvals take priority.
 
 Sound is suppressed in the identified focused GNOME Terminal tab or active tmux
-pane, and while the desktop is locked. Other waiting terminals can still alert.
+pane, and while the desktop is locked. On macOS the front Terminal or iTerm2 tab
+plays the same role once automation is allowed; other macOS apps suppress sound
+while they are in front, without acknowledging. Other waiting terminals can still alert.
 A waiting session shown in the identified focused GNOME Terminal tab counts as
 seen and is acknowledged, which also stops the panel highlight. Other terminal
 applications depend on an inherited X11 window ID, which cannot tell tabs apart:
@@ -186,7 +236,9 @@ ai-monitor uninstall --purge  # Also remove history and reset preferences
 ```
 
 Or use `./uninstall.sh` with the same flags from the source directory. Uninstall
-removes only ai-monitor's exact hook handlers, service, command, and extension.
+removes only ai-monitor's exact hook handlers, service, command, and extension
+(on macOS: the LaunchAgents and the menu bar app; `--purge` also deletes its
+preferences domain).
 Other settings and hooks remain. JSON formatting may be normalized. Damaged CLI
 settings stop uninstall before application removal so the JSON can be repaired.
 
@@ -202,6 +254,16 @@ environment for installation, updates, and uninstall.
 | Local state | `~/.local/state/ai-monitor` |
 | Socket | `$XDG_RUNTIME_DIR/ai-monitor/control.sock` |
 | Preferences | GSettings `org.gnome.shell.extensions.ai-monitor` |
+
+On macOS, application, command and state use the same paths. The others are:
+
+| Purpose | Default location on macOS |
+| --- | --- |
+| Menu bar app | `~/Applications/AI Monitor.app` |
+| Services | `~/Library/LaunchAgents/io.github.remkobrenters.ai-monitor{,.menu}.plist` |
+| Logs | `~/.local/state/ai-monitor/logs` |
+| Socket | `~/.local/state/ai-monitor/run/control.sock` (or under `$XDG_RUNTIME_DIR`) |
+| Preferences | `defaults read io.github.remkobrenters.ai-monitor.menu` |
 
 Claude settings use `$CLAUDE_CONFIG_DIR/settings.json`, defaulting to
 `~/.claude/settings.json`. Codex hooks use `$CODEX_HOME/hooks.json`, defaulting to
@@ -219,6 +281,10 @@ ai-monitor ack
 make check
 make dist
 ```
+
+On macOS, `./status.sh` shows both LaunchAgents; logs are in
+`~/.local/state/ai-monitor/logs`. `make check` there also type-checks the Swift app
+and runs its logic tests instead of the GNOME JavaScript checks.
 
 Development tests additionally require Node.js 18+. They use isolated fixtures
 and mock external services; they do not play audio or read personal conversations.

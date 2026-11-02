@@ -18,7 +18,10 @@ REQUIRED = (
     'extension/sounds/sound_effect_3.mp3', 'docs/desktop-check.md', 'docs/repository.md',
     'docs/audio-provenance.json', 'docs/screenshots/dashboard-dark.png',
     'docs/screenshots/dashboard-light.png', 'docs/screenshots/panel-normal.png',
-    'docs/screenshots/panel-attention.png', '.github/workflows/checks.yml',
+    'docs/screenshots/panel-attention.png', 'docs/screenshots/macos-dashboard-dark.png',
+    'docs/screenshots/macos-dashboard-light.png', 'docs/screenshots/macos-menubar-normal.png',
+    'docs/screenshots/macos-menubar-attention.png', '.github/workflows/checks.yml',
+    'macos/Logic.swift', 'macos/App.swift', 'macos/tests/main.swift',
 )
 PATTERNS = ('ai_monitor/*.py', 'extension/*.js', 'scripts/*.py', 'tests/test_*.py',
             'tests/*.test.mjs', 'docs/releases/v*.md')

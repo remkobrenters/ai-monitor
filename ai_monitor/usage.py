@@ -11,6 +11,7 @@ is never refreshed here (Claude Code rotates it itself).
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 import math
 import os
@@ -19,6 +20,7 @@ import re
 import select
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.error
@@ -426,11 +428,34 @@ def parse_claude_limits(data: dict, oauth: dict, now: float) -> dict:
     return {"plan": claude_plan(oauth), "windows": windows, "fetchedAt": now, "source": "claude", "error": ""}
 
 
-def claude_limits(credentials: Path, now: float, opener=None) -> dict:
+def claude_keychain_login(credentials: Path, config_dir: str | None, runner=subprocess.run) -> dict:
+    """On macOS Claude Code keeps its login in the login Keychain, falling back to the file.
+    The `security` tool reads only Claude Code's own item; a custom config dir has its own item."""
+    service = "Claude Code-credentials"
+    names = [f"{service}-{hashlib.sha256(config_dir.encode()).hexdigest()[:8]}"] if config_dir else []
+    for name in (*names, service):
+        try:
+            result = runner(["/usr/bin/security", "find-generic-password", "-s", name, "-w"],
+                            capture_output=True, text=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            break
+        value = result.stdout.strip()
+        if result.returncode != 0 or not value:
+            continue
+        try:
+            return json.loads(value if value.startswith("{") else bytes.fromhex(value).decode())
+        except ValueError:
+            raise LimitsUnavailable("Claude Code's Keychain login is unreadable") from None
+    return json.loads(credentials.read_text())
+
+
+def claude_limits(credentials, now: float, opener=None) -> dict:
     """The lookup Claude Code's /usage screen makes, with its current login. Read-only:
-    an expired login is reported, never refreshed (refresh tokens rotate)."""
+    an expired login is reported, never refreshed (refresh tokens rotate).
+    `credentials` is the credentials file, or a callable returning its parsed contents."""
     try:
-        oauth = json.loads(credentials.read_text()).get("claudeAiOauth") or {}
+        stored = credentials() if callable(credentials) else json.loads(credentials.read_text())
+        oauth = stored.get("claudeAiOauth") or {}
     except (OSError, ValueError, AttributeError):
         raise LimitsUnavailable("Not signed in to Claude Code") from None
     token, expires = oauth.get("accessToken"), oauth.get("expiresAt")
@@ -477,6 +502,9 @@ class UsageMonitor:
         self.archive = DayArchive(state_dir / "ai-days")
         self.limits_file = state_dir / "ai-limits.json"
         self.credentials = Path(os.environ.get("CLAUDE_CONFIG_DIR") or home / ".claude") / ".credentials.json"
+        if sys.platform == "darwin":
+            path, config = self.credentials, os.environ.get("CLAUDE_CONFIG_DIR")
+            self.credentials = lambda: claude_keychain_login(path, config)
         self.errors = dict.fromkeys(TOOLS, "")
         try:
             saved = json.loads(self.limits_file.read_text())

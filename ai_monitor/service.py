@@ -8,6 +8,7 @@ import shutil
 import socket
 import socketserver
 import struct
+import sys
 import threading
 import time
 
@@ -16,6 +17,8 @@ from .sessions import Sessions
 from .terminal import alive, discover, focus_target
 from .usage import SCAN_INTERVAL, UsageMonitor
 from .titles import Titles
+
+SOL_LOCAL, LOCAL_PEERCRED, XUCRED_SIZE = 0, 1, 76
 
 
 class Monitor:
@@ -128,6 +131,11 @@ class Handler(socketserver.StreamRequestHandler):
         self.connection.settimeout(4)
         if hasattr(socket, "SO_PEERCRED"):
             _, uid, _ = struct.unpack("3i", self.connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+            if uid != os.getuid():
+                return
+        elif sys.platform == "darwin":
+            # LOCAL_PEERCRED returns struct xucred: cr_version, then cr_uid.
+            _, uid = struct.unpack_from("2I", self.connection.getsockopt(SOL_LOCAL, LOCAL_PEERCRED, XUCRED_SIZE))
             if uid != os.getuid():
                 return
         try:

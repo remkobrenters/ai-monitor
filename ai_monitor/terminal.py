@@ -1,18 +1,25 @@
-"""Linux process identity and explicit terminal navigation (never simulated keys)."""
+"""Linux and macOS process identity and explicit terminal navigation (never simulated keys)."""
 
 import os
 from pathlib import Path
 import re
 import subprocess
+import sys
+import time
+
+MACOS = sys.platform == "darwin"
+if MACOS:
+    from . import darwin
 
 ENVIRONMENT_KEYS = {"TMUX", "TMUX_PANE", "WINDOWID", "SSH_CONNECTION", "SSH_TTY", "AI_MONITOR_NAME",
-                    "GNOME_TERMINAL_SERVICE", "GNOME_TERMINAL_SCREEN"}
+                    "GNOME_TERMINAL_SERVICE", "GNOME_TERMINAL_SCREEN", "__CFBundleIdentifier"}
 
 
 def process_environment(pid):
     result = {}
     try:
-        for entry in (Path('/proc') / str(pid) / 'environ').read_bytes().split(b'\0'):
+        entries = darwin.environment(pid) if MACOS else (Path('/proc') / str(pid) / 'environ').read_bytes().split(b'\0')
+        for entry in entries:
             key, _, value = entry.partition(b'=')
             name = key.decode(errors='replace')
             if name in ENVIRONMENT_KEYS:
@@ -33,7 +40,28 @@ def gnome_target(environment):
     return {'busName': bus, 'screenId': identifier}
 
 
+def mac_target(environment, tty):
+    """The macOS app hosting a terminal (from launchd's bundle ID) and its tab's tty."""
+    bundle = environment.get('__CFBundleIdentifier', '')
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]{0,254}', bundle):
+        bundle = ''
+    if not re.fullmatch(r'/dev/ttys\d+', tty or ''):
+        tty = ''
+    return {'bundleId': bundle, 'tty': tty} if bundle or tty else None
+
+
+def view(pid):
+    """Where a terminal client process is displayed."""
+    environment = process_environment(pid)
+    result = {'windowId': environment.get('WINDOWID', ''), 'gnomeTerminal': gnome_target(environment)}
+    if MACOS:
+        result['macTerminal'] = mac_target(environment, controlling_tty(pid))
+    return result
+
+
 def process(pid):
+    if MACOS:
+        return darwin.process(int(pid))
     try:
         root = Path("/proc") / str(int(pid))
         fields = (root / "stat").read_text().rsplit(")", 1)[1].split()
@@ -62,14 +90,33 @@ def alive(identity):
     return bool(current and current["start"] == identity.get("start"))
 
 
+def command_line(pid):
+    if MACOS:
+        return [arg.decode(errors="replace") for arg in darwin.arguments(pid)]
+    command = (Path("/proc") / str(pid) / "cmdline").read_bytes()[:16384].split(b"\0")
+    return [value.decode(errors="replace") for value in command if value]
+
+
+def controlling_tty(pid):
+    if MACOS:
+        return darwin.tty(pid)
+    for fd in (0, 1, 2):
+        try:
+            candidate = os.readlink(f"/proc/{pid}/fd/{fd}")
+            if re.fullmatch(r"/dev/pts/\d+|/dev/tty\d+", candidate):
+                return candidate
+        except OSError:
+            pass
+    return ""
+
+
 def tool_process(tool):
     """Find the CLI ancestor, rather than its short-lived hook shell."""
     for info in ancestors(os.getppid()):
         try:
-            root = Path("/proc") / str(info["pid"])
-            executable = Path(os.readlink(root / "exe")).name
-            command = (root / "cmdline").read_bytes().split(b"\0")[:2]
-            names = [Path(arg.decode(errors="replace")).name for arg in command]
+            pid = info["pid"]
+            executable = Path(darwin.executable(pid) if MACOS else os.readlink(f"/proc/{pid}/exe")).name
+            names = [Path(arg).name for arg in command_line(pid)[:2]]
             if executable == tool or tool in names or (tool == "codex" and "codex.js" in names):
                 return info
         except OSError:
@@ -89,28 +136,37 @@ def terminal_for(info, environment):
                 break
     tty = ""
     for parent in chain:
-        for fd in (0, 1, 2):
-            try:
-                candidate = os.readlink(f"/proc/{parent['pid']}/fd/{fd}")
-                if re.fullmatch(r"/dev/pts/\d+|/dev/tty\d+", candidate):
-                    tty = candidate
-                    break
-            except OSError:
-                pass
+        tty = controlling_tty(parent["pid"])
         if tty:
             break
     tmux = environment.get("TMUX", "").rsplit(",", 2)
-    return {"process": info, "ancestors": chain, "tty": tty,
-            "tmuxSocket": tmux[0] if len(tmux) == 3 else "",
-            "tmuxPane": environment.get("TMUX_PANE", ""),
-            "windowId": environment.get("WINDOWID", ""),
-            "gnomeTerminal": gnome_target(environment),
-            "remote": bool(environment.get("SSH_CONNECTION") or environment.get("SSH_TTY"))}
+    result = {"process": info, "ancestors": chain, "tty": tty,
+              "tmuxSocket": tmux[0] if len(tmux) == 3 else "",
+              "tmuxPane": environment.get("TMUX_PANE", ""),
+              "windowId": environment.get("WINDOWID", ""),
+              "gnomeTerminal": gnome_target(environment),
+              "remote": bool(environment.get("SSH_CONNECTION") or environment.get("SSH_TTY"))}
+    if MACOS:
+        result["macTerminal"] = mac_target(environment, tty)
+    return result
 
 
 def capture(tool):
     info = tool_process(tool)
     return terminal_for(info, os.environ) if info else None
+
+
+def own_pids():
+    if MACOS:
+        return [pid for pid in darwin.pids() if darwin.uid(pid) == os.getuid()]
+    result = []
+    for root in Path('/proc').iterdir():
+        try:
+            if root.name.isdigit() and root.stat().st_uid == os.getuid():
+                result.append(int(root.name))
+        except OSError:
+            continue
+    return result
 
 
 def discover():
@@ -120,14 +176,9 @@ def discover():
     Command lines are never stored or logged.
     """
     found = []
-    for root in Path('/proc').iterdir():
-        if not root.name.isdigit():
-            continue
+    for pid in own_pids():
         try:
-            if root.stat().st_uid != os.getuid():
-                continue
-            command = (root / "cmdline").read_bytes()[:16384].split(b"\0")
-            arguments = [value.decode(errors="replace") for value in command if value]
+            arguments = command_line(pid)
             names = [Path(arg).name for arg in arguments[:2]]
             tool = next((tool for tool in ("claude", "codex")
                          if tool in names or f"{tool}.js" in names), None)
@@ -137,14 +188,14 @@ def discover():
             if tool == "codex" and any(arg in ("app-server", "exec", "features", "doctor", "completion")
                                        for arg in arguments[1:3]):
                 continue
-            info = process(int(root.name))
+            info = process(pid)
             if not info:
                 continue
-            environment = process_environment(int(root.name))
+            environment = process_environment(pid)
             terminal = terminal_for(info, environment)
             if not terminal["tty"] or terminal["remote"]:
                 continue
-            cwd = os.readlink(root / "cwd")
+            cwd = darwin.cwd(pid) if MACOS else os.readlink(f"/proc/{pid}/cwd")
             for index, arg in enumerate(arguments):
                 if arg in ("--cd", "-C") and index + 1 < len(arguments):
                     cwd = str((Path(cwd) / arguments[index + 1]).resolve())
@@ -164,6 +215,9 @@ def discover():
 
 def recently_started(identity, seconds=15):
     try:
+        if MACOS:
+            age = time.time() - darwin.started(identity)
+            return 0 <= age <= seconds
         uptime = float(Path('/proc/uptime').read_text().split()[0])
         age = uptime - int(identity["start"]) / os.sysconf("SC_CLK_TCK")
         return 0 <= age <= seconds
@@ -182,8 +236,10 @@ def visible_views(terminal, cache=None, runner=run_tmux):
         return []
     socket, pane = terminal.get('tmuxSocket'), terminal.get('tmuxPane', '')
     if not socket or not re.fullmatch(r'%\d+', pane):
-        return [{'windowId': terminal.get('windowId', ''),
-                 'gnomeTerminal': terminal.get('gnomeTerminal')}]
+        result = {'windowId': terminal.get('windowId', ''), 'gnomeTerminal': terminal.get('gnomeTerminal')}
+        if MACOS:
+            result['macTerminal'] = terminal.get('macTerminal')
+        return [result]
     cache = {} if cache is None else cache
     if socket not in cache:
         views = {}
@@ -192,10 +248,7 @@ def visible_views(terminal, cache=None, runner=run_tmux):
                              '#{client_pid}\t#{pane_id}\t#{pane_tty}')
             for client in clients.splitlines():
                 pid, active, tty = client.split('\t')
-                environment = process_environment(int(pid))
-                views.setdefault((active, tty), []).append({
-                    'windowId': environment.get('WINDOWID', ''),
-                    'gnomeTerminal': gnome_target(environment)})
+                views.setdefault((active, tty), []).append(view(int(pid)))
         except (OSError, ValueError, subprocess.SubprocessError):
             views = {}
         cache[socket] = views
@@ -211,6 +264,8 @@ def focus_target(terminal, runner=run_tmux):
     result = {"pids": [p["pid"] for p in terminal.get("ancestors", []) if alive(p)],
               "windowId": terminal.get("windowId", ""), "tmux": False,
               "gnomeTerminal": terminal.get('gnomeTerminal')}
+    if MACOS:
+        result["macTerminal"] = terminal.get("macTerminal")
     pane, socket = terminal.get("tmuxPane", ""), terminal.get("tmuxSocket", "")
     if not socket or not re.fullmatch(r"%\d+", pane):
         return result
@@ -234,8 +289,11 @@ def focus_target(terminal, runner=run_tmux):
         runner(socket, "switch-client", "-c", tty, "-t", session)
         pids = [p["pid"] for p in ancestors(pid)]
         # WINDOWID inherited when the server started may belong to an old client.
+        environment = process_environment(pid)
         result.update(pids=list(dict.fromkeys(pids)), windowId="", tmux=True,
-                      gnomeTerminal=gnome_target(process_environment(pid)))
+                      gnomeTerminal=gnome_target(environment))
+        if MACOS:
+            result["macTerminal"] = mac_target(environment, tty)
         return result
     except (OSError, subprocess.SubprocessError) as error:
         raise ValueError("Could not select the tmux pane. Is its server still running?") from error

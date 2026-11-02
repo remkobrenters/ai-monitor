@@ -10,10 +10,12 @@ advertising SDK, cloud database, or ai-monitor account.
 - Local CLI records to extract numeric token usage and native session-name
   metadata. Those files contain conversations; records may be parsed in memory,
   but message bodies are not copied into ai-monitor state, logs, or network calls.
-- Same-user Linux process identities, working directories, terminal devices, and
-  a small allowlist of environment variables. Full environments are not stored.
-- GNOME Terminal screen IDs and active-tab state; tmux pane/client identities.
-  It does not scrape terminal text or record keyboard input.
+- Same-user Linux or macOS process identities, working directories, terminal
+  devices, and a small allowlist of environment variables (on macOS, also the
+  terminal app's bundle ID). Full environments are not stored.
+- GNOME Terminal screen IDs and active-tab state; tmux pane/client identities. On
+  macOS, with your permission, Terminal and iTerm2 are asked which tab's tty is in
+  front. It does not scrape terminal text or record keyboard input.
 - Codex's exact-turn approval routing metadata, from a bounded portion of its
   local session record. Only the turn ID and reviewer enum are retained for that
   turn; instructions and conversation contents are not forwarded or stored.
@@ -32,7 +34,7 @@ conversation text. Exit detection removes ended sessions; numeric history remain
 until purged. The application does not encrypt these files at rest.
 
 State files are written atomically with user-only file permissions. The service's
-Unix socket is private and validates the connecting Linux user. This is a
+Unix socket is private and validates the connecting user. This is a
 same-user boundary, not protection against another application already running as
 that user or an administrator.
 
@@ -44,14 +46,16 @@ migrates its previous full-settings record to this minimal format.
 
 Claude allowance requests use its existing OAuth access token over HTTPS to
 `api.anthropic.com`. Redirects are rejected, response sizes are bounded, and login
-tokens are never stored in ai-monitor's state or refreshed by it. Codex allowance
+tokens are never stored in ai-monitor's state or refreshed by it. On macOS the
+token is read from Claude Code's own login Keychain item with Apple's `security`
+tool when needed, and kept in memory only. Codex allowance
 requests use the installed Codex CLI's `app-server` and existing login. The CLI
 controls its own network transport and authentication.
 
 Lookups run at most once per provider every ten minutes while the panel reports
 an unlocked desktop, with rate-limit backoff. `ai-monitor serve --no-network`
 disables allowance lookups when running the service manually. It does not change
-the installed systemd unit. Local records may still supply Codex windows.
+the installed systemd unit or LaunchAgent. Local records may still supply Codex windows.
 
 No prompts, source code, token history, project paths, session names, or analytics
 are uploaded by ai-monitor. Opening the repository link launches the default web
@@ -66,5 +70,5 @@ include CLI credentials, complete settings, transcripts, or the state directory.
 
 `ai-monitor uninstall` removes the application and its hooks while retaining
 history/preferences. `ai-monitor uninstall --purge` also deletes ai-monitor's
-state and resets its GSettings preferences. Neither deletes Claude/Codex's own
+state and resets its GSettings preferences (macOS: its preferences domain). Neither deletes Claude/Codex's own
 history or login. Deletion is ordinary filesystem deletion, not secure erasure.

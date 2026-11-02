@@ -1,4 +1,4 @@
-"""CLI, passive hook entry point, and GNOME's persistent JSON bridge."""
+"""CLI, passive hook entry point, and the panel's persistent JSON bridge (GNOME and macOS)."""
 
 import argparse
 import json
@@ -78,7 +78,7 @@ def main():
     elif args.command == "uninstall":
         manager = Path(__file__).resolve().parents[1] / "scripts/manage.py"
         flags = (["--purge"] if args.purge else []) + (["--dry-run"] if args.dry_run else [])
-        os.execv("/usr/bin/python3", ["/usr/bin/python3", str(manager), "uninstall", *flags])
+        os.execv(sys.executable, [sys.executable, str(manager), "uninstall", *flags])
     elif args.command == "run":
         os.environ["AI_MONITOR_NAME"] = args.name
         os.execvp(args.tool, [args.tool, *args.args])
@@ -88,7 +88,9 @@ def main():
                              **({"id": args.id} if args.command == "ack" else {})})
             print(json.dumps(value, indent=2))
         except (OSError, ValueError) as error:
-            parser.exit(1, f"ai-monitor: {error}. Check: systemctl --user status ai-monitor.service\n")
+            check = ("launchctl print gui/$(id -u)/io.github.remkobrenters.ai-monitor" if sys.platform == "darwin"
+                     else "systemctl --user status ai-monitor.service")
+            parser.exit(1, f"ai-monitor: {error}. Check: {check}\n")
 
 
 if __name__ == "__main__":

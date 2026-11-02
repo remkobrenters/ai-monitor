@@ -97,6 +97,7 @@ class HookTests(unittest.TestCase):
             report('codex')
             diagnostic.assert_called_with('codex', 'Stop', 'unavailable')
 
+    @unittest.skipIf(sys.platform == 'darwin', 'Uses Linux /dev/pts and GNOME Terminal identities')
     def test_real_terminal_client_discovery_excludes_app_server(self):
         try:
             master, slave = os.openpty()

@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 from ai_monitor import usage as ai_usage
 from ai_monitor.usage import (ClaudeScanner, CodexScanner, UsageMonitor, LimitsUnavailable,
-                      RateLimited, claude_limits, codex_rate_limits, parse_codex_limits)
+                      RateLimited, claude_keychain_login, claude_limits, codex_rate_limits, parse_codex_limits)
 
 
 def at(*parts):
@@ -271,6 +271,30 @@ class ClaudeLimitsTests(Fixture):
                                                       "subscriptionType": "team",
                                                       "rateLimitTier": "default_claude_max_5x"}}))
         return path
+
+    def test_macos_login_comes_from_claude_codes_keychain_item_before_the_file(self):
+        stored = {"claudeAiOauth": {"accessToken": "keychain-token"}}
+        calls = []
+
+        def security(arguments, **_):
+            calls.append(arguments[3])
+            found = arguments[3] == "Claude Code-credentials"
+            return type("Result", (), {"returncode": 0 if found else 44,
+                                       "stdout": json.dumps(stored) + "\n" if found else ""})()
+
+        path = self.credentials(2e12)
+        self.assertEqual(claude_keychain_login(path, None, security), stored)
+        self.assertEqual(calls, ["Claude Code-credentials"])
+        calls.clear()
+        # A custom config dir has its own item; the default item remains a fallback.
+        self.assertEqual(claude_keychain_login(path, "/custom/claude", security), stored)
+        self.assertRegex(calls[0], r"^Claude Code-credentials-[0-9a-f]{8}$")
+        hexed = lambda arguments, **_: type("Result", (), {"returncode": 0, "stdout": json.dumps(stored).encode().hex()})()
+        self.assertEqual(claude_keychain_login(path, None, hexed), stored)
+        missing = lambda arguments, **_: type("Result", (), {"returncode": 44, "stdout": ""})()
+        self.assertEqual(claude_keychain_login(path, None, missing)["claudeAiOauth"]["accessToken"], "token")
+        with self.assertRaisesRegex(LimitsUnavailable, "Not signed in"):
+            claude_limits(lambda: claude_keychain_login(self.root / "missing.json", None, missing), 1000)
 
     def test_reads_five_hour_and_weekly_windows(self):
         seen = {}
