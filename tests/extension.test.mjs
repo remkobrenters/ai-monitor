@@ -63,7 +63,7 @@ async function fixture(orientation = false) {
         constructor(...args) { super(...args); this.menu = new Menu(); }
     }
     const settings = new Actor();
-    settings.values = {'show-percent': true, 'show-cache-info': false, 'pulse-enabled': true, 'notify-ready': true,
+    settings.values = {'show-percent': true, 'show-token-counts': true, 'show-cache-info': false, 'pulse-enabled': true, 'notify-ready': true,
         'notifications-enabled': true, 'sound-enabled': false, 'sound-file': '', 'sound-effect': 1,
         'sound-volume': 70, 'sound-repeat': 'once'};
     for (const type of ['boolean', 'double', 'string', 'uint']) {
@@ -117,7 +117,10 @@ async function fixture(orientation = false) {
             Variant: class {constructor(type, value) {this.type = type; this.value = value;}}}},
         'gi://GObject': {default: {registerClass: value => value}},
         'gi://Pango': {default: {WrapMode: {WORD_CHAR: 2}, EllipsizeMode: {NONE: 0}}},
-        'gi://St': {default: {BoxLayout: class extends Actor {static list_properties() { return orientation ? [{name: 'orientation'}] : []; }},
+        'gi://St': {default: {BoxLayout: class extends Actor {
+            _init(props = {}) { super._init({layout_manager: {}, ...props}); }
+            static list_properties() { return orientation ? [{name: 'orientation'}] : []; }
+        },
             DrawingArea: Actor, Widget: Actor, Icon: Actor, Label: Actor, Bin: Actor, Button: Actor, ScrollView: Actor, PolicyType: {NEVER: 0},
             ThemeContext: {get_for_stage: () => ({scale_factor: geometry.scale})},
             Corner: {TOPLEFT: 0}, Side: {LEFT: 0, RIGHT: 1, TOP: 2, BOTTOM: 3}}},
@@ -298,6 +301,41 @@ test('one shared menu exposes usage and sessions for detected tools', async () =
     assert.equal(projectPath.clutter_text.line_wrap, true);
     session.emit('clicked');
     assert.equal(e._button.menu.isOpen, false);
+    e.disable();
+});
+
+test('token counts can be hidden and restored with the latest data and cache preference', async () => {
+    const f = await fixture();
+    const e = f.extension;
+    const now = Date.now() / 1000;
+    const data = f.snapshot([{id: 'a', tool: 'claude', title: 'Example', state: 'working', since: now}]);
+    data.usage.tokens.codex = {today: {input: 100, cacheRead: 800, output: 100}};
+    data.usage.limits.claude = {fetchedAt: now, windows: [{minutes: 300, usedPercent: 25}]};
+    e._update(data);
+    e._button.menu.open();
+    f.settings.set_boolean('show-cache-info', true);
+    assert.equal(e._dashboard.tokenCells.total[0].text, '1.0k');
+    const hasTokens = () => e._dashboard.actor.children.some(actor => actor.children?.[0]?.text === 'Tokens');
+    assert.ok(hasTokens());
+
+    f.settings.set_boolean('show-token-counts', false);
+    assert.equal(hasTokens(), false);
+    assert.equal(Object.keys(e._dashboard.tokenCells).length, 0);
+    assert.equal(e._dashboard.actor.children.at(-1).children[0].text, 'Sessions');
+    assert.equal(e._dashboard.sessionButtons.size, 1);
+    assert.equal(e._dashboard.cards.claude.meters[0].level.fraction, 0.25);
+    assert.equal(e._buttons.codex.actor.visible, true); // Token data still detects this tool.
+    assert.equal(e._footer.children.length, 3);
+
+    e._button.menu.close();
+    data.usage.tokens.codex.today.output = 1100;
+    e._update(data);
+    e._button.menu.open();
+    assert.equal(hasTokens(), false);
+    f.settings.set_boolean('show-token-counts', true);
+    assert.ok(hasTokens());
+    assert.equal(e._dashboard.tokenCells.total[0].text, '2.0k');
+    assert.equal(e._dashboard.tokenCells.cached[0].text, '800');
     e.disable();
 });
 

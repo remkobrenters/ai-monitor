@@ -30,6 +30,11 @@ class SchemaTests(unittest.TestCase):
             script.write_text('''import Gio from 'gi://Gio';
 const settings = new Gio.Settings({schema_id: 'org.gnome.shell.extensions.ai-monitor'});
 if (settings.get_boolean('sound-enabled')) throw new Error('Sound must be opt-in');
+if (!settings.get_boolean('show-token-counts')) throw new Error('Token counts must default on');
+for (const visible of [false, true]) {
+    if (!settings.set_boolean('show-token-counts', visible) || settings.get_boolean('show-token-counts') !== visible)
+        throw new Error('Cannot toggle token counts');
+}
 if (settings.get_boolean('show-cache-info')) throw new Error('Cached data must default off');
 if (!settings.set_boolean('show-cache-info', true) || !settings.get_boolean('show-cache-info'))
     throw new Error('Cannot enable cached data');

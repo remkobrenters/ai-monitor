@@ -78,6 +78,8 @@ export class Dashboard {
             return;
         }
         const cards = new St.BoxLayout({...(compact ? vertical : {}), style_class: 'am-quota-cards', x_expand: true});
+        // Share horizontal space equally regardless of plan names or reset text.
+        cards.layout_manager.homogeneous = !compact;
         this.actor.add_child(cards);
         this.cards = {};
         for (const tool of visibleTools) this.cards[tool] = this.quota(cards, tool, snapshot.usage.limits?.[tool]);
@@ -123,10 +125,12 @@ export class Dashboard {
                 this.sessionButtons.set(row.id, button);
             }
         }
-        rule(this.actor);
         this.tokenCells = {};
-        this.tokenTable(section(this.actor, 'Tokens'), snapshot.usage, visibleTools,
-            settings.get_boolean('show-cache-info'), compact);
+        if (settings.get_boolean('show-token-counts')) {
+            rule(this.actor);
+            this.tokenTable(section(this.actor, 'Tokens'), snapshot.usage, visibleTools,
+                settings.get_boolean('show-cache-info'), compact);
+        }
         if (snapshot.collectorError) this.actor.add_child(label(snapshot.collectorError, 'am-muted'));
     }
 
