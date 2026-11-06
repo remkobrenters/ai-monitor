@@ -13,10 +13,10 @@ Claude Code and Codex monitor for the GNOME panel and the macOS menu bar: subscr
 
 ## Release
 
-- Git tag: `v1.3.0`
-- Title: **ai-monitor v1.3.0**
-- Body: [v1.3.0 release notes](releases/v1.3.0.md)
-- Asset: `ai-monitor-1.3.0-source.zip` and its `.sha256` checksum
+- Git tag: `v1.3.1`
+- Title: **ai-monitor v1.3.1**
+- Body: [v1.3.1 release notes](releases/v1.3.1.md)
+- Asset: `ai-monitor-1.3.1-source.zip` and its `.sha256` checksum
 
 Pushing a `v*` tag runs the Checks workflow on x86-64 and ARM64. After both jobs
 pass, GitHub publishes the release with the matching notes, source archive, and

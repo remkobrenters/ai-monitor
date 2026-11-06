@@ -7,7 +7,7 @@ import UserNotifications
 
 let DEFAULTS: [String: Any] = ["sound-enabled": false, "sound-file": "", "sound-effect": 1, "sound-repeat": "once",
                                "sound-volume": 70, "notify-ready": true, "notifications-enabled": true,
-                               "pulse-enabled": true, "show-percent": true, "show-cache-info": false]
+                               "pulse-enabled": true, "show-percent": true, "show-token-counts": true, "show-cache-info": false]
 let REPOSITORY = URL(string: "https://github.com/remkobrenters/ai-monitor")!
 
 extension Color {
@@ -275,6 +275,7 @@ struct DashboardView: View {
     var actions: Actions
     var maxHeight: () -> CGFloat
     @AppStorage("notify-ready") private var notifyReady = true
+    @AppStorage("show-token-counts") private var showTokenCounts = true
     @AppStorage("show-cache-info") private var showCacheInfo = false
     @AppStorage("sound-enabled") private var soundEnabled = false
     @State private var contentHeight: CGFloat = 0
@@ -314,8 +315,10 @@ struct DashboardView: View {
                 }
                 Divider()
                 sessionList(sessions)
-                Divider()
-                tokenTable(snapshot.usage)
+                if showTokenCounts {
+                    Divider()
+                    tokenTable(snapshot.usage)
+                }
                 if let error = snapshot.collectorError, !error.isEmpty {
                     Text(error).font(.callout).foregroundStyle(.secondary)
                 }
@@ -501,6 +504,7 @@ struct QuotaCard: View {
 struct SettingsView: View {
     @AppStorage("show-percent") private var showPercent = true
     @AppStorage("pulse-enabled") private var pulse = true
+    @AppStorage("show-token-counts") private var showTokenCounts = true
     @AppStorage("show-cache-info") private var cacheInfo = false
     @AppStorage("notify-ready") private var notifyReady = true
     @AppStorage("notifications-enabled") private var notifications = true
@@ -521,10 +525,12 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section("Tokens") {
+                Toggle("Show token counts", isOn: $showTokenCounts)
                 Toggle(isOn: $cacheInfo) {
                     Text("Show cached token data")
                     Text("Show cached token counts and cache-hit percentages")
                 }
+                .disabled(!showTokenCounts)
             }
             Section {
                 Toggle("Alert when an agent finishes its turn", isOn: $notifyReady)

@@ -19,9 +19,14 @@ export default class AiMonitorPreferences extends ExtensionPreferences {
             panel.add(row);
         }
         const tokens = new Adw.PreferencesGroup({title: 'Tokens'});
+        const tokenCounts = new Adw.SwitchRow({title: 'Show token counts',
+            subtitle: 'Show the token usage block in the panel menu'});
+        settings.bind('show-token-counts', tokenCounts, 'active', Gio.SettingsBindFlags.DEFAULT);
+        tokens.add(tokenCounts);
         const cacheInfo = new Adw.SwitchRow({title: 'Show cached token data',
             subtitle: 'Show cached token counts and cache-hit percentages'});
         settings.bind('show-cache-info', cacheInfo, 'active', Gio.SettingsBindFlags.DEFAULT);
+        settings.bind('show-token-counts', cacheInfo, 'sensitive', Gio.SettingsBindFlags.GET);
         tokens.add(cacheInfo);
         page.add(tokens);
         const alerts = new Adw.PreferencesGroup({title: 'Attention', description:

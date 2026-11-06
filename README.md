@@ -42,6 +42,8 @@ usage are shown.
   remaining Codex reset credits when available. Green below 70%, orange near the
   limit, red when exhausted; gray marks unavailable or stale data.
 - **Usage totals:** Today, Week, Month, and Year to Date, per tool and combined.
+  Hide or show the entire block in Settings → Tokens → Show token counts;
+  collection continues while hidden.
   Cached-token counts and cache-hit percentages can be enabled together in
   Settings; both are hidden by default. Rows highlight on hover.
 - **Terminal sessions:** native session names, working-directory paths, and

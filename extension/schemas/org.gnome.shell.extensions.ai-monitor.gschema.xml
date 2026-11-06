@@ -10,6 +10,7 @@
     <key name="notifications-enabled" type="b"><default>true</default><summary>Desktop attention notifications</summary></key>
     <key name="pulse-enabled" type="b"><default>true</default><summary>Blink the tool background when attention is needed</summary></key>
     <key name="show-percent" type="b"><default>true</default><summary>Show consumed allowance percentage</summary></key>
+    <key name="show-token-counts" type="b"><default>true</default><summary>Show the token usage block in the panel menu</summary></key>
     <key name="show-cache-info" type="b"><default>false</default><summary>Show cached token counts and percentages in the token table</summary></key>
   </schema>
 </schemalist>
