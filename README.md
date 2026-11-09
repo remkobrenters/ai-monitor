@@ -1,6 +1,6 @@
 # ai-monitor
 
-**v1.3.1** · [Release notes](docs/releases/v1.3.1.md) · [Privacy](PRIVACY.md) · [Security](SECURITY.md)
+**v1.4.0** · [Release notes](docs/releases/v1.4.0.md) · [Privacy](PRIVACY.md) · [Security](SECURITY.md)
 
 Keep track of Claude Code and Codex without leaving your desktop. One GNOME panel
 menu, or one macOS menu bar item, brings together subscription limits, token usage,
@@ -167,7 +167,9 @@ after a reinstall.
 ## Sessions and alerts
 
 Launch the CLIs normally. Native names are matched by exact session ID rather
-than guessed from another session in the same project. You can supply a label:
+than guessed from another session in the same project. Renaming a session keeps
+its status and terminal link. Switching sessions inside a running CLI replaces
+the previous session row and its alerts. You can supply a label:
 
 ```sh
 ai-monitor run --name "Fix checkout" claude
@@ -293,7 +295,7 @@ and mock external services; they do not play audio or read personal conversation
 A real Unix-socket test skips when the environment prohibits sockets. The test
 suite does not replace [desktop acceptance checks](docs/desktop-check.md).
 
-`make dist` creates `dist/ai-monitor-1.3.1-source.zip` and a SHA-256 checksum from
+`make dist` creates `dist/ai-monitor-1.4.0-source.zip` and a SHA-256 checksum from
 an explicit allowlist. For an isolated install/uninstall check without contacting
 the desktop or changing real CLI settings:
 

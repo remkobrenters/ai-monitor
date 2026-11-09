@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from ai_monitor.sessions import Sessions
+from ai_monitor.sessions import Sessions, session_key
 
 
 class SessionTests(unittest.TestCase):
@@ -230,3 +230,70 @@ class SessionTests(unittest.TestCase):
         self.event('PostToolUse', title='Explicit label')
         self.store.refresh_titles({row['id']: 'Another native name'})
         self.assertEqual(self.store.snapshot()[0]['title'], 'Explicit label')
+
+    def test_codex_rename_preserves_identity_status_and_acknowledgement(self):
+        self.base['tool'] = 'codex'
+        row = self.event('Stop')[0]
+        self.store.refresh_titles({row['id']: 'Original name'})
+        self.store.acknowledge(row['id'])
+        self.store.refresh_titles({row['id']: 'Renamed session'})
+        renamed = self.store.snapshot()[0]
+        self.assertEqual((renamed['id'], renamed['state'], renamed['revision']),
+                         (row['id'], 'ready', row['revision']))
+        self.assertEqual(renamed['title'], 'Renamed session')
+        self.assertFalse(renamed['attention'])
+        self.assertEqual(self.store.get(row['id'])['terminal'], self.base['terminal'])
+
+    def test_switching_sessions_in_a_live_cli_replaces_the_old_finished_row(self):
+        for tool in ('claude', 'codex'):
+            with self.subTest(tool=tool):
+                self.base['tool'] = tool
+                old = next(row for row in self.event('Stop') if row['tool'] == tool)
+                old_sent = self.now
+                self.store.refresh_titles({old['id']: 'Previous session'})
+                self.event('SessionStart', session='new-session')
+                self.event('UserPromptSubmit', session='new-session')
+                # Delayed events must neither resurrect the old row nor take its terminal back.
+                self.event('Stop', sentAt=old_sent)
+                self.event('SubagentStart', agentId='late-child')
+                self.event('SessionEnd')
+                rows = [row for row in self.store.snapshot() if row['tool'] == tool]
+                self.assertEqual(len(rows), 1)
+                self.assertEqual((rows[0]['state'], rows[0]['attention']), ('working', False))
+                self.assertNotEqual(rows[0]['id'], old['id'])
+                self.assertNotEqual(rows[0]['title'], 'Previous session')
+                with self.assertRaisesRegex(ValueError, 'ended'):
+                    self.store.get(old['id'])
+                self.assertEqual(self.store.get(rows[0]['id'])['terminal'], self.base['terminal'])
+
+    def test_sessions_in_separate_terminals_of_the_same_project_stay_independent(self):
+        self.base['tool'] = 'codex'
+        first = self.event('Stop')[0]
+        second_terminal = {'process': {'pid': 456, 'start': '99'}}
+        self.event('UserPromptSubmit', session='another', terminal=second_terminal)
+        rows = {row['id']: row for row in self.store.snapshot()}
+        self.assertEqual(len(rows), 2)
+        self.assertEqual((rows[first['id']]['state'], rows[first['id']]['attention']), ('ready', True))
+        second = next(row for row in rows.values() if row['id'] != first['id'])
+        self.assertEqual(second['state'], 'working')
+        self.assertEqual(self.store.get(second['id'])['terminal'], second_terminal)
+
+    def test_restart_repairs_saved_duplicate_rows_without_rearming_attention(self):
+        self.base['tool'] = 'codex'
+        old = self.event('Stop')[0]
+        current = self.store.get(old['id'])
+        new_key = session_key('codex', 'new-session')
+        discovery_key = session_key('codex', 'process:123:42')
+        # Simulate the duplicates left by older monitor versions.
+        saved = {old['id']: current,
+                 new_key: {**current, 'id': new_key, 'sessionId': 'new-session', 'eventAt': self.now + 1,
+                           'updated': self.now + 1, 'title': 'Current session', 'attention': False},
+                 discovery_key: {**current, 'id': discovery_key, 'discovered': True, 'eventAt': self.now + 2,
+                                 'updated': self.now + 2}}
+        self.store.path.write_text(json.dumps(saved))
+        restarted = Sessions(self.store.path, clock=lambda: self.now + 3, is_alive=lambda _: True)
+        rows = restarted.snapshot()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]['id'], rows[0]['title'], rows[0]['attention']),
+                         (new_key, 'Current session', False))
+        self.assertEqual(list(json.loads(self.store.path.read_text())), [new_key])
