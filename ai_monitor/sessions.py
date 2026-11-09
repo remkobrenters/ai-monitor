@@ -39,6 +39,7 @@ class Sessions:
                              and self.is_alive(row["terminal"].get("process", {}))}
         except (OSError, ValueError, TypeError, AttributeError):
             pass
+        self.prune()
 
     def event(self, event):
         tool, session = event.get("tool"), event.get("session")
@@ -51,10 +52,12 @@ class Sessions:
             return
         key = session_key(tool, session)
         now = self.clock()
+        sent = event.get("sentAt", now)
+        if not isinstance(sent, (int, float)) or not math.isfinite(sent):
+            raise ValueError("Invalid event timestamp")
         with self.lock:
             row = self.rows.get(key)
             if name == "SessionEnd":
-                sent = event.get("sentAt", now)
                 terminal = event.get("terminal", {})
                 same_process = row and terminal.get("process") == row["terminal"].get("process")
                 if row and same_process and isinstance(sent, (int, float)) and sent >= row["eventAt"]:
@@ -64,12 +67,19 @@ class Sessions:
             terminal = event.get("terminal")
             if not isinstance(terminal, dict) or not self.is_alive(terminal.get("process", {})):
                 return
+            owners = [other for other in self.rows.values() if other['tool'] == tool and
+                      other['terminal']['process'] == terminal['process']]
+            # A CLI can switch sessions without exiting. Only its current session
+            # owns the terminal; late hooks from the previous session must not reclaim it.
+            if any(other['id'] != key and not other.get('discovered') and
+                   (lifecycle or name == 'Discover' or sent < other['eventAt']) for other in owners):
+                return
+            if row and row['terminal']['process'] == terminal['process'] and not lifecycle and sent < row['eventAt']:
+                return
             if name != "Discover":
-                # Replace provisional discovery rows once a real hook identifies the session.
-                for other_key, other in list(self.rows.items()):
-                    if other_key != key and other["tool"] == tool and other.get("discovered") and \
-                            other["terminal"]["process"] == terminal["process"]:
-                        del self.rows[other_key]
+                for other in owners:
+                    if other['id'] != key:
+                        del self.rows[other['id']]
             new_process = not row or row["terminal"]["process"] != terminal["process"]
             if new_process:
                 if len(self.rows) >= MAX_SESSIONS:
@@ -83,9 +93,6 @@ class Sessions:
                        "discovered": name == "Discover", "sessionId": session,
                        "titleSource": 'custom' if event.get('title') else 'project'}
                 self.rows[key] = row
-            sent = event.get("sentAt", now)
-            if not isinstance(sent, (int, float)) or not math.isfinite(sent):
-                raise ValueError("Invalid event timestamp")
             if lifecycle:
                 subagents.update(row, event, sent)
                 if subagents.count(row) and row['state'] in ('idle', 'unknown', 'ready'):
@@ -229,8 +236,18 @@ class Sessions:
 
     def prune(self):
         with self.lock:
-            removed = [key for key, row in self.rows.items()
-                       if not self.is_alive(row["terminal"].get("process", {}))]
+            removed = []
+            owners = set()
+            # Repair duplicates saved by older versions, retaining the latest real
+            # session rather than a provisional process-discovery row.
+            for key, row in sorted(self.rows.items(), key=lambda item:
+                    (not item[1].get('discovered'), item[1]['eventAt'], item[1]['updated']), reverse=True):
+                process = row['terminal'].get('process', {})
+                identity = (row['tool'], process.get('pid'), process.get('start'))
+                if identity in owners or not self.is_alive(process):
+                    removed.append(key)
+                else:
+                    owners.add(identity)
             for key in removed:
                 del self.rows[key]
             if removed:

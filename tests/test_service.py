@@ -46,6 +46,35 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(snapshot['health']['eventsReceived'], 1)
         self.assertEqual(snapshot['health']['unlinkedEvents'], 0)
 
+    def test_codex_session_switch_keeps_only_the_current_terminal_target(self):
+        terminal = {'process': process(os.getpid()), 'tty': '/dev/pts/123',
+                    'gnomeTerminal': {'busName': ':1.42', 'screenId': 'screen'}}
+        self.discovery.return_value = [{'tool': 'codex', 'project': '/project', 'terminal': terminal}]
+        now = [1000]
+        self.monitor.sessions.clock = lambda: now[0]
+
+        def event(session, name, sent=None):
+            now[0] += 1
+            self.monitor.dispatch({'op': 'event', 'tool': 'codex', 'session': session, 'event': name,
+                                   'cwd': '/project', 'sentAt': now[0] if sent is None else sent,
+                                   'terminal': {'process': {'pid': 999999, 'start': 'daemon'}, 'tty': ''}})
+
+        event('old-session', 'Stop')
+        previous = self.monitor.dispatch({'op': 'snapshot'})['sessions'][0]
+        old_sent = now[0]
+        event('current-session', 'SessionStart')
+        event('current-session', 'UserPromptSubmit')
+        event('old-session', 'Stop', sent=old_sent)
+        rows = self.monitor.dispatch({'op': 'snapshot'})['sessions']
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]['state'], rows[0]['attention']), ('working', False))
+        with self.assertRaisesRegex(ValueError, 'ended'):
+            self.monitor.dispatch({'op': 'focus', 'id': previous['id']})
+        with patch('ai_monitor.service.focus_target', return_value={'gnomeTerminal': terminal['gnomeTerminal']}) as focus:
+            target = self.monitor.dispatch({'op': 'focus', 'id': rows[0]['id']})
+        focus.assert_called_once_with(terminal)
+        self.assertEqual(target['gnomeTerminal'], terminal['gnomeTerminal'])
+
     def test_private_socket_request_response_and_malformed_requests(self):
         path = Path(self.temp.name) / "control.sock"
         try:
